@@ -34,3 +34,6 @@
 *.app
 
 */build/*
+
+# Mesh files
+*.msh

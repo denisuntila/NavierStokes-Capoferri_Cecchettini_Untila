@@ -270,6 +270,54 @@ public:
   };
 
 
+  class PreconditionASIMPLE
+  {
+  public:
+    // Application of the preconditioner: we just copy the input vector (src)
+    // into the output vector (dst).
+    void initialize(const TrilinosWrappers::SparseMatrix &F_,
+      const TrilinosWrappers::SparseMatrix &B_,
+      const TrilinosWrappers::SparseMatrix &Bt_)
+    {
+      // TODO list
+      // D: diagonal part of F (block 0,0 of the matrix)
+      // S: B D^-1 Bt
+      F = &F_;
+      B = &B_;
+      Bt = &Bt_;
+      
+      // Creating D and D inverse
+      // These are vectors since the two matrices are diagonal
+      for (unsigned int i : D.locally_owned_elements())
+      {
+        double tmp = F->diag_element(i);
+        D[i] = tmp;
+        Di[i] = 1.0 / tmp;
+      }
+
+      // Creating S
+      B->mmult(S, *Bt, Di);
+
+    }
+    void
+    vmult(TrilinosWrappers::MPI::BlockVector       &dst,
+          const TrilinosWrappers::MPI::BlockVector &src) const
+    {
+
+    }
+
+  protected:
+    const TrilinosWrappers::SparseMatrix *F;
+    const TrilinosWrappers::SparseMatrix *B;
+    const TrilinosWrappers::SparseMatrix *Bt;
+    TrilinosWrappers::SparseMatrix S;
+
+    mutable TrilinosWrappers::MPI::Vector D;
+    mutable TrilinosWrappers::MPI::Vector Di;
+
+  };
+
+
 
   NavierStokes(const std::string &mesh_file_name_,
     const unsigned int &degree_velocity_,

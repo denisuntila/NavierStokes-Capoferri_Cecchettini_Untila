@@ -338,9 +338,13 @@ NavierStokes::solve_time_step()
 
   SolverGMRES<TrilinosWrappers::MPI::BlockVector> solver(solver_control);
 
-  PreconditionIdentity preconditioner;
+  //PreconditionIdentity preconditioner;
   
   //PreconditionBlockTriangular preconditioner;
+
+  PreconditionASIMPLE preconditioner;
+  preconditioner.initialize(system_matrix.block(0, 0),
+    system_matrix.block(1, 0), system_matrix.block(0, 1), solution_owned);
   
 
   solver.solve(system_matrix, solution_owned, system_rhs, preconditioner);

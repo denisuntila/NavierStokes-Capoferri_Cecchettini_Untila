@@ -269,7 +269,7 @@ public:
     mutable TrilinosWrappers::MPI::Vector tmp;
   };
 
-
+  
   class PreconditionASIMPLE
   {
   public:
@@ -280,23 +280,17 @@ public:
       const TrilinosWrappers::SparseMatrix &Bt_,
       const TrilinosWrappers::MPI::BlockVector &owned_solution)
     {
-      // TODO list
-      // D: diagonal part of F (block 0,0 of the matrix)
-      // S: B D^-1 Bt
       F = &F_;
       B = &B_;
       Bt = &Bt_;
       
-      // Creating D and D inverse
-      // These are vectors since the two matrices are diagonal
-
-      D.reinit(owned_solution.block(0));
+      // Creating D inverse
+      // This is a vector since the matrix D is diagonal
       Di.reinit(owned_solution.block(0));
-      for (unsigned int i : D.locally_owned_elements())
+      for (unsigned int i : Di.locally_owned_elements())
       {
-        double tmp = F->diag_element(i);
-        D[i] = tmp;
-        Di[i] = 1.0 / tmp;
+        double temp = F->diag_element(i);
+        Di[i] = 1.0 / temp;
       }
 
       // Creating S
@@ -305,46 +299,37 @@ public:
       preconditioner_F.initialize(*F);
       preconditioner_S.initialize(S);
 
+      vec0.reinit(owned_solution.block(0));
+      vec1.reinit(owned_solution.block(1));
     }
+
     void
     vmult(TrilinosWrappers::MPI::BlockVector &dst,
           const TrilinosWrappers::MPI::BlockVector &src) const
     {
-      // Multiply block 0 of the vector by Di and store the result
-      // in block 0
-      dst = src;
-      dst.block(0).scale(Di);
+      
+      const unsigned int maxit = 10000;
+      const double tol = 1.e-2;
+      // It didn't work because i applied the preconditioner
+      // starting from the wrong matrix
 
-      // block 0 = block 0 - Bt * block 1
-      vec0.reinit(dst.block(0));
-      Bt->vmult(vec0, dst.block(1));
-      vec0 *= -1.0;
-      dst.block(0).sadd(1.0, vec0);
-
-      // Multiply back block 0 by D and block 1 by 1/alpha * I
-      dst.block(0).scale(D);
-      dst.block(1) *= 1 / alpha;
+      // Solve F on block 0    
+      SolverControl solver_control_F(maxit, tol * src.block(0).l2_norm());
+      SolverGMRES<TrilinosWrappers::MPI::Vector> solver_F(solver_control_F);
+      solver_F.solve(*F, vec0, src.block(0), preconditioner_F);
+      B->vmult(vec1, vec0);
+      vec1.sadd(-1.0, src.block(1));
 
       // Solve the system in S on block 1
-      const unsigned int maxit = 5000;
-      const double tol = 1.e-2;
-      SolverControl solver_control_S(maxit, tol * dst.block(1).l2_norm());
-      vec1.reinit(dst.block(1));
+      SolverControl solver_control_S(maxit, tol * vec1.l2_norm());
       SolverGMRES<TrilinosWrappers::MPI::Vector> solver_S(solver_control_S);
-      solver_S.solve(S, vec1, dst.block(1), preconditioner_S);
-      dst.block(1) = vec1;
+      solver_S.solve(S, dst.block(1), vec1, preconditioner_S);
+      dst.block(1) *= - 1.0 / alpha;
 
-      // Block 1 = block 1 - B *  block0
-      B->vmult(vec1, dst.block(0));
-      vec1 *= -1.0;
-      dst.block(1).sadd(1.0, vec1);
-
-      // Solve F on block 0
-      SolverControl solver_control_F(maxit, tol * dst.block(0).l2_norm());
-      SolverGMRES<TrilinosWrappers::MPI::Vector> solver_F(solver_control_F);
-      solver_F.solve(*F, vec0, dst.block(0), preconditioner_F);
-      dst.block(0) = vec0;
-
+      Bt->vmult(dst.block(0), dst.block(1));
+      dst.block(0).scale(Di);
+      dst.block(0).sadd(- 1.0, vec0);
+      
     }
 
   protected:
@@ -355,14 +340,12 @@ public:
     const TrilinosWrappers::SparseMatrix *Bt;
     TrilinosWrappers::SparseMatrix S;
 
-    mutable TrilinosWrappers::MPI::Vector D;
     mutable TrilinosWrappers::MPI::Vector Di;
     mutable TrilinosWrappers::MPI::Vector vec0;
     mutable TrilinosWrappers::MPI::Vector vec1;
 
-    TrilinosWrappers::PreconditionSSOR preconditioner_F;
-    TrilinosWrappers::PreconditionSSOR preconditioner_S;
-
+    TrilinosWrappers::PreconditionILU preconditioner_F;
+    TrilinosWrappers::PreconditionILU preconditioner_S;
 
   };
 

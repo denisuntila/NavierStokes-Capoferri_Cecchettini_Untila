@@ -436,7 +436,8 @@ NavierStokes::solve()
     
     assemble(time);
     solve_time_step();
-    output(time_step);
+    if (time_step % step == 0)
+      output(time_step);
   }
 
 }

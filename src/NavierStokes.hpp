@@ -308,7 +308,8 @@ public:
     const unsigned int &degree_velocity_,
     const unsigned int &degree_pressure_,
     const double &deltat_,
-    const double &T_)
+    const double &T_,
+    const unsigned int &step_)
     : mesh_file_name(mesh_file_name_)
     , mpi_size(Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD))
     , mpi_rank(Utilities::MPI::this_mpi_process(MPI_COMM_WORLD))
@@ -318,6 +319,7 @@ public:
     , mesh(MPI_COMM_WORLD)
     , deltat(deltat_)
     , T(T_)
+    , step(step_)
   {}
 
   void setup();
@@ -374,6 +376,7 @@ protected:
 
   double time;
   const double T;
+  const unsigned int step;
 
   ForcingTerm forcing_term;
   InletVelocity inlet_velocity;

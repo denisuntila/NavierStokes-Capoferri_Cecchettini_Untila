@@ -9,7 +9,7 @@ Dy = 0.2;
 // Radius of the circle
 r = 0.05;
 
-h = 0.02;
+h = 0.01;
 
 Point(1) = {0, 0, 0, h};
 Point(2) = {Lx, 0, 0, h};

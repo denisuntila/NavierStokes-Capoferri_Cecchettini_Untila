@@ -9,7 +9,7 @@ int main(int argc, char **argv)
   const unsigned int degree_velocity = 2;
   const unsigned int degree_pressure = 1;
 
-  NavierStokes problem(mesh_file_name, degree_velocity, degree_pressure, 0.01, 0.5);
+  NavierStokes problem(mesh_file_name, degree_velocity, degree_pressure, 0.001, 1.0, 10);
   problem.setup();
   problem.solve();
 

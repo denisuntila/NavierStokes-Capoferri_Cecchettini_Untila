@@ -127,15 +127,9 @@ NavierStokes::setup()
       }
     }
 
-    TrilinosWrappers::BlockSparsityPattern sparsity_pressure_mass(
-      block_owned_dofs, MPI_COMM_WORLD);
-    DoFTools::make_sparsity_pattern(dof_handler,
-      coupling, sparsity_pressure_mass);
-    sparsity_pressure_mass.compress();
-
     pcout << "\tInitializing the matrices" << std::endl;
     system_matrix.reinit(sparsity);
-    pressure_mass.reinit(sparsity_pressure_mass);
+    deltat_lumped_mass_inv.reinit(block_owned_dofs, MPI_COMM_WORLD);
 
     pcout << "\tInitializing the system right-hand side" << std::endl;
     system_rhs.reinit(block_owned_dofs, MPI_COMM_WORLD);
@@ -163,14 +157,14 @@ NavierStokes::assemble(const double &time)
     update_JxW_values);
 
   FullMatrix<double> cell_matrix(dofs_per_cell, dofs_per_cell);
-  FullMatrix<double> cell_pressure_mass_matrix(dofs_per_cell, dofs_per_cell);
+  Vector<double> cell_lumped_mass_inv(dofs_per_cell);
   Vector<double> cell_rhs(dofs_per_cell);
 
   std::vector<types::global_dof_index> dof_indices(dofs_per_cell);
 
   system_matrix = 0.0;
   system_rhs    = 0.0;
-  pressure_mass = 0.0;
+  deltat_lumped_mass_inv = 0.0;
 
   FEValuesExtractors::Vector velocity(0);
   FEValuesExtractors::Scalar pressure(dim);
@@ -186,8 +180,8 @@ NavierStokes::assemble(const double &time)
       fe_values.reinit(cell);
 
       cell_matrix               = 0.0;
+      cell_lumped_mass_inv      = 0.0;
       cell_rhs                  = 0.0;
-      cell_pressure_mass_matrix = 0.0;
 
       fe_values[velocity].get_function_values(solution, current_velocity_values);
 
@@ -202,6 +196,7 @@ NavierStokes::assemble(const double &time)
 
           for (unsigned int i = 0; i < dofs_per_cell; ++i)
             {
+              double temp = 0;
               for (unsigned int j = 0; j < dofs_per_cell; ++j)
                 {
                   cell_matrix(i, j) +=
@@ -244,10 +239,13 @@ NavierStokes::assemble(const double &time)
                     fe_values[pressure].value(i, q) *
                     fe_values.JxW(q);
 
-                  // Pressure mass matrix.
-                  cell_pressure_mass_matrix(i, j) +=
-                    fe_values[pressure].value(i, q) *
-                    fe_values[pressure].value(j, q) / nu * fe_values.JxW(q);
+                  // Lumped mass matrix.
+                  temp += std::abs(
+                    fe_values[velocity].value(j, q) *
+                    fe_values[velocity].value(i, q) *
+                    fe_values.JxW(q)
+                  );
+                  
                 }
 
               // Forcing term.
@@ -259,6 +257,9 @@ NavierStokes::assemble(const double &time)
                 scalar_product(current_velocity_values[q],
                   fe_values[velocity].value(i, q)) *
                 fe_values.JxW(q) / deltat;
+              
+              // Used for aYosida preconditioner.
+              cell_lumped_mass_inv(i) = deltat / temp;
             }
         }
 
@@ -290,12 +291,12 @@ NavierStokes::assemble(const double &time)
 
       system_matrix.add(dof_indices, cell_matrix);
       system_rhs.add(dof_indices, cell_rhs);
-      pressure_mass.add(dof_indices, cell_pressure_mass_matrix);
+      deltat_lumped_mass_inv.add(dof_indices, cell_lumped_mass_inv);
     }
 
   system_matrix.compress(VectorOperation::add);
   system_rhs.compress(VectorOperation::add);
-  pressure_mass.compress(VectorOperation::add);
+  deltat_lumped_mass_inv.compress(VectorOperation::add);
 
   // Dirichlet boundary conditions.
   {
@@ -334,17 +335,31 @@ NavierStokes::assemble(const double &time)
 void
 NavierStokes::solve_time_step()
 {
-  SolverControl solver_control(500000, 1e-6 * system_rhs.l2_norm());
+  SolverControl solver_control(500, 1e-6 * system_rhs.l2_norm());
 
   SolverGMRES<TrilinosWrappers::MPI::BlockVector> solver(solver_control);
 
   //PreconditionIdentity preconditioner;
-  
-  //PreconditionBlockTriangular preconditioner;
 
+  
   PreconditionASIMPLE preconditioner;
-  preconditioner.initialize(system_matrix.block(0, 0),
-    system_matrix.block(1, 0), system_matrix.block(0, 1), solution_owned);
+  preconditioner.initialize(
+    system_matrix.block(0, 0),
+    system_matrix.block(1, 0),
+    system_matrix.block(0, 1),
+    solution_owned
+  );
+  
+  /*
+  PreconditionAYosida preconditioner;
+  preconditioner.initialize(
+    system_matrix.block(0, 0),
+    system_matrix.block(1, 0),
+    system_matrix.block(0, 1),
+    deltat_lumped_mass_inv,
+    solution_owned
+  );
+  */
   
 
   solver.solve(system_matrix, solution_owned, system_rhs, preconditioner);

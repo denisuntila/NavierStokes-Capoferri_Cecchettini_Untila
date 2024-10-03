@@ -338,6 +338,12 @@ public:
 
   void solve();
 
+  void export_data();
+
+  void solve2();
+
+  void import_data();
+
 
 protected:
   const std::string mesh_file_name;

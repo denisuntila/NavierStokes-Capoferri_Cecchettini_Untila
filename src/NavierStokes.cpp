@@ -116,17 +116,6 @@ NavierStokes::setup()
       coupling, sparsity);
     sparsity.compress();
 
-    for (unsigned int c = 0; c < dim + 1; ++c)
-    {
-      for (unsigned int d = 0; d < dim + 1; ++d)
-      {
-        if (c == dim && d == dim)
-          coupling[c][d] = DoFTools::always;
-        else
-          coupling[c][d] = DoFTools::none;
-      }
-    }
-
     pcout << "\tInitializing the matrices" << std::endl;
     system_matrix.reinit(sparsity);
     deltat_lumped_mass_inv.reinit(block_owned_dofs, MPI_COMM_WORLD);
@@ -173,126 +162,132 @@ NavierStokes::assemble(const double &time)
   forcing_term.set_time(time);
 
   for (const auto &cell : dof_handler.active_cell_iterators())
+  {
+    if (!cell->is_locally_owned())
+      continue;
+
+    fe_values.reinit(cell);
+
+    cell_matrix               = 0.0;
+    cell_lumped_mass_inv      = 0.0;
+    cell_rhs                  = 0.0;
+
+    fe_values[velocity].get_function_values(solution, current_velocity_values);
+
+    for (unsigned int q = 0; q < n_q; ++q)
     {
-      if (!cell->is_locally_owned())
-        continue;
+      Vector<double> forcing_term_loc(dim);
+      forcing_term.vector_value(fe_values.quadrature_point(q),
+        forcing_term_loc);
+      Tensor<1, dim> forcing_term_tensor;
+      for (unsigned int d = 0; d < dim; ++d)
+        forcing_term_tensor[d] = forcing_term_loc[d];
 
-      fe_values.reinit(cell);
-
-      cell_matrix               = 0.0;
-      cell_lumped_mass_inv      = 0.0;
-      cell_rhs                  = 0.0;
-
-      fe_values[velocity].get_function_values(solution, current_velocity_values);
-
-      for (unsigned int q = 0; q < n_q; ++q)
+      for (unsigned int i = 0; i < dofs_per_cell; ++i)
+      {
+        double temp = 0;
+        for (unsigned int j = 0; j < dofs_per_cell; ++j)
         {
-          Vector<double> forcing_term_loc(dim);
-          forcing_term.vector_value(fe_values.quadrature_point(q),
-            forcing_term_loc);
-          Tensor<1, dim> forcing_term_tensor;
-          for (unsigned int d = 0; d < dim; ++d)
-            forcing_term_tensor[d] = forcing_term_loc[d];
+          cell_matrix(i, j) +=
+            scalar_product(fe_values[velocity].value(i, q),
+              fe_values[velocity].value(j, q)) *
+            fe_values.JxW(q) / deltat;
 
-          for (unsigned int i = 0; i < dofs_per_cell; ++i)
-            {
-              double temp = 0;
-              for (unsigned int j = 0; j < dofs_per_cell; ++j)
-                {
-                  cell_matrix(i, j) +=
-                    scalar_product(fe_values[velocity].value(i, q),
-                      fe_values[velocity].value(j, q)) *
-                    fe_values.JxW(q) / deltat;
+          // Viscosity term.
+          cell_matrix(i, j) += nu *
+            scalar_product(fe_values[velocity].gradient(i, q),
+              fe_values[velocity].gradient(j, q)) *
+            fe_values.JxW(q);
 
-                  // Viscosity term.
-                  cell_matrix(i, j) += nu *
-                    scalar_product(fe_values[velocity].gradient(i, q),
-                      fe_values[velocity].gradient(j, q)) *
-                    fe_values.JxW(q);
+          // T1
+          
+          cell_matrix(i, j) += 
+            fe_values[velocity].value(i, q) *
+            fe_values[velocity].gradient(j, q) *
+            current_velocity_values[q] *
+            fe_values.JxW(q);
+          
 
-                  // T1
-                  
-                  cell_matrix(i, j) += 
-                    fe_values[velocity].value(i, q) *
-                    fe_values[velocity].gradient(j, q) *
-                    current_velocity_values[q] *
-                    fe_values.JxW(q);
-                  
-
-                  // T2
-                  /*
-                  cell_matrix(i, j) += 
-                    current_velocity_values[q] * fe_values[velocity].gradient(j, q) *
-                    fe_values[velocity].value(i, q) *
-                    fe_values.JxW(q);
-                  */
-                  
+          // T2
+          /*
+          cell_matrix(i, j) += 
+            current_velocity_values[q] * fe_values[velocity].gradient(j, q) *
+            fe_values[velocity].value(i, q) *
+            fe_values.JxW(q);
+          */
+          
 
 
-                  // Pressure term in the momentum equation.
-                  cell_matrix(i, j) -= fe_values[velocity].divergence(i, q) *
-                    fe_values[pressure].value(j, q) *
-                    fe_values.JxW(q);
+          // Pressure term in the momentum equation.
+          cell_matrix(i, j) -= fe_values[velocity].divergence(i, q) *
+            fe_values[pressure].value(j, q) *
+            fe_values.JxW(q);
 
-                  // Pressure term in the continuity equation.
-                  cell_matrix(i, j) -= fe_values[velocity].divergence(j, q) *
-                    fe_values[pressure].value(i, q) *
-                    fe_values.JxW(q);
+          // Pressure term in the continuity equation.
+          cell_matrix(i, j) -= fe_values[velocity].divergence(j, q) *
+            fe_values[pressure].value(i, q) *
+            fe_values.JxW(q);
 
-                  // Lumped mass matrix.
-                  temp += std::abs(
-                    fe_values[velocity].value(j, q) *
-                    fe_values[velocity].value(i, q) *
-                    fe_values.JxW(q)
-                  );
-                  
-                }
-
-              // Forcing term.
-              cell_rhs(i) += scalar_product(forcing_term_tensor,
-                fe_values[velocity].value(i, q)) *
-                fe_values.JxW(q);
-              
-              cell_rhs(i) +=
-                scalar_product(current_velocity_values[q],
-                  fe_values[velocity].value(i, q)) *
-                fe_values.JxW(q) / deltat;
-              
-              // Used for aYosida preconditioner.
-              cell_lumped_mass_inv(i) = deltat / temp;
-            }
+          // Lumped mass matrix.
+          temp += std::abs(
+            fe_values[velocity].value(j, q) *
+            fe_values[velocity].value(i, q) *
+            fe_values.JxW(q)
+          );
+          
         }
 
-      // Boundary integral for Neumann BCs.
-      if (cell->at_boundary())
-        {
-          for (unsigned int f = 0; f < cell->n_faces(); ++f)
-            {
-              if (cell->face(f)->at_boundary() &&
-                  cell->face(f)->boundary_id() == 1)
-                {
-                  fe_face_values.reinit(cell, f);
-
-                  for (unsigned int q = 0; q < n_q_face; ++q)
-                    {
-                      for (unsigned int i = 0; i < dofs_per_cell; ++i)
-                        {
-                          cell_rhs(i) += -p_out *
-                            scalar_product(fe_face_values.normal_vector(q),
-                              fe_face_values[velocity].value(i, q)) *
-                            fe_face_values.JxW(q);
-                        }
-                    }
-                }
-            }
-        }
-
-      cell->get_dof_indices(dof_indices);
-
-      system_matrix.add(dof_indices, cell_matrix);
-      system_rhs.add(dof_indices, cell_rhs);
-      deltat_lumped_mass_inv.add(dof_indices, cell_lumped_mass_inv);
+        // Forcing term.
+        cell_rhs(i) += scalar_product(forcing_term_tensor,
+          fe_values[velocity].value(i, q)) *
+          fe_values.JxW(q);
+        
+        cell_rhs(i) +=
+          scalar_product(current_velocity_values[q],
+            fe_values[velocity].value(i, q)) *
+          fe_values.JxW(q) / deltat;
+        
+        // Used for aYosida preconditioner.
+        //cell_lumped_mass_inv(i) = deltat / temp;
+        cell_lumped_mass_inv(i) += temp;
+      }
     }
+
+    // Boundary integral for Neumann BCs.
+    if (cell->at_boundary())
+    {
+      for (unsigned int f = 0; f < cell->n_faces(); ++f)
+      {
+        if (cell->face(f)->at_boundary() &&
+            cell->face(f)->boundary_id() == 1)
+        {
+          fe_face_values.reinit(cell, f);
+
+          for (unsigned int q = 0; q < n_q_face; ++q)
+          {
+            for (unsigned int i = 0; i < dofs_per_cell; ++i)
+            {
+              cell_rhs(i) += -p_out *
+                scalar_product(fe_face_values.normal_vector(q),
+                  fe_face_values[velocity].value(i, q)) *
+                fe_face_values.JxW(q);
+            }
+          }
+        }
+      }
+    }
+
+    cell->get_dof_indices(dof_indices);
+
+    system_matrix.add(dof_indices, cell_matrix);
+    system_rhs.add(dof_indices, cell_rhs);
+    deltat_lumped_mass_inv.add(dof_indices, cell_lumped_mass_inv);
+  }
+
+  for (const auto &i : locally_owned_dofs)
+  {
+    deltat_lumped_mass_inv[i] = deltat / deltat_lumped_mass_inv[i];
+  }
 
   system_matrix.compress(VectorOperation::add);
   system_rhs.compress(VectorOperation::add);
@@ -341,7 +336,7 @@ NavierStokes::solve_time_step()
 
   //PreconditionIdentity preconditioner;
 
-  
+  /*
   PreconditionASIMPLE preconditioner;
   preconditioner.initialize(
     system_matrix.block(0, 0),
@@ -349,8 +344,9 @@ NavierStokes::solve_time_step()
     system_matrix.block(0, 1),
     solution_owned
   );
+  */
   
-  /*
+  
   PreconditionAYosida preconditioner;
   preconditioner.initialize(
     system_matrix.block(0, 0),
@@ -359,7 +355,7 @@ NavierStokes::solve_time_step()
     deltat_lumped_mass_inv,
     solution_owned
   );
-  */
+  
   
 
   solver.solve(system_matrix, solution_owned, system_rhs, preconditioner);
@@ -373,6 +369,12 @@ NavierStokes::solve_time_step()
 void
 NavierStokes::output(const unsigned int &time_step) const
 {
+  TrilinosWrappers::MPI::BlockVector solution_ghost(block_owned_dofs,
+    block_relevant_dofs,
+    MPI_COMM_WORLD);
+  
+  solution_ghost = solution;       
+
   DataOut<dim> data_out;
 
   std::vector<DataComponentInterpretation::DataComponentInterpretation>
@@ -384,9 +386,9 @@ NavierStokes::output(const unsigned int &time_step) const
   names.push_back("pressure");
 
   data_out.add_data_vector(dof_handler,
-                           solution,
-                           names,
-                           data_component_interpretation);
+    solution_ghost,
+    names,
+    data_component_interpretation);
 
   std::vector<unsigned int> partition_int(mesh.n_active_cells());
   GridTools::get_subdomain_association(mesh, partition_int);
@@ -397,9 +399,9 @@ NavierStokes::output(const unsigned int &time_step) const
 
   const std::string output_file_name = "output-stokes";
   data_out.write_vtu_with_pvtu_record("./",
-                                      output_file_name,
-                                      time_step,
-                                      MPI_COMM_WORLD);
+    output_file_name,
+    time_step,
+    MPI_COMM_WORLD);
 }
 
 
@@ -440,4 +442,145 @@ NavierStokes::solve()
       output(time_step);
   }
 
+}
+
+void
+NavierStokes::export_data()
+{
+  // For now it works in singlecore
+  // I'll try to fix it using the ghost of the vector
+
+  TrilinosWrappers::MPI::BlockVector solution_ghost(block_owned_dofs,
+    block_relevant_dofs,
+    MPI_COMM_WORLD);
+  solution_ghost = solution;
+  
+  unsigned int local_size = solution.locally_owned_size();
+  //std::cout << local_size << std::endl;
+  unsigned int max_local_size = 0;
+  MPI_Allreduce(&local_size, &max_local_size,
+    1, MPI_UNSIGNED, MPI_MAX, MPI_COMM_WORLD);
+  
+  std::vector<int> local_indices(max_local_size);
+  for (unsigned int i = 0; i < max_local_size; ++i)
+  {
+    local_indices.at(i) = ((i < local_size) ? 
+      (locally_owned_dofs.nth_index_in_set(i)) : -1);
+  }
+
+  std::unique_ptr<int[]> temp;
+  std::unique_ptr<double[]> rbuf;
+
+  if (0 == mpi_rank)
+  {
+    temp = std::make_unique<int[]>(mpi_size * max_local_size);
+    rbuf = std::make_unique<double[]>(solution.size());
+  }
+
+  for (unsigned int i = 0; i < max_local_size; ++i)
+  {
+    MPI_Gather(&local_indices.at(i), 1, MPI_UNSIGNED, temp.get() +
+      i * mpi_size, 1, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
+  }
+
+  for (unsigned int i = 0; i < max_local_size; ++i)
+  {
+    double local_data = 0;
+    int scount = 0;
+    
+    if (i < local_size)
+    {
+      local_data = solution_ghost[locally_owned_dofs.nth_index_in_set(i)];
+      scount = 1;
+    }
+
+    if (0 == mpi_rank)
+    {
+      int *displs = temp.get() + i * mpi_size;
+      std::unique_ptr<int[]> rcount = std::make_unique<int[]>(mpi_size);
+
+      for (unsigned int j = 0; j < mpi_size; ++j)
+      {
+        rcount.get()[j] = ((-1 != displs[j]) ? 1 : 0);
+      }
+      MPI_Gatherv(&local_data, scount, MPI_DOUBLE, rbuf.get(),
+        rcount.get(), displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    }
+    else if (1 == scount)
+      MPI_Gatherv(&local_data, scount, MPI_DOUBLE, nullptr, 
+        nullptr, nullptr, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  }
+  MPI_Barrier(MPI_COMM_WORLD);
+  if (mpi_rank == 0)
+  {
+    std::ofstream output_file("test4.bin", std::fstream::binary);
+    output_file.write((char *)rbuf.get(), solution.size() * sizeof(double));
+    output_file.close();
+  }
+}
+
+
+void
+NavierStokes::solve2()
+{
+  //assemble_matrices();
+
+  pcout << "===================================================" << std::endl;
+
+  time = 0.0;
+
+  // Initial condition
+  {
+    pcout << "Applying initial conditions" << std::endl;
+
+    //VectorTools::interpolate(dof_handler, initial_conditions, solution_owned);
+    solution = solution_owned;
+
+    output(0);
+
+    pcout << "---------------------------------------------------" << std::endl;    
+  }
+
+  unsigned int time_step = 0;
+
+  while (time < T - 0.5 * deltat)
+  {
+    time += deltat;
+    ++time_step;
+
+    pcout << "n = " << std::setw(3) << time_step << ", t = " << std::setw(5)
+      << time << ":" << std::flush;
+    
+    assemble(time);
+    solve_time_step();
+    if (time_step % step == 0)
+      output(time_step);
+  }
+
+}
+
+void
+NavierStokes::import_data()
+{
+  // For now it works only if we import a vector obtained by
+  // executing the solver with the same number of MPI processes
+  /*
+  TrilinosWrappers::MPI::BlockVector solution_ghost(block_owned_dofs,
+  block_relevant_dofs,
+  MPI_COMM_WORLD);
+  */
+  //solution_ghost = solution;
+
+  std::ifstream infile("test4.bin", std::fstream::binary);
+  std::vector<unsigned char> inbuff(std::istreambuf_iterator<char>(infile), {});
+  infile.close();
+  
+  
+  for (const auto &i : locally_owned_dofs)
+  {
+    solution_owned[i] = *(double*)&inbuff[i * sizeof(double)];
+  }
+  //std::cout << "Buffer size = " << inbuff.size() << " Bytes" << std::endl; 
+  //solution_owned = solution_ghost;
 }

@@ -11,11 +11,12 @@ int main(int argc, char **argv)
 
   NavierStokes problem(mesh_file_name, degree_velocity, degree_pressure, 0.001, 0.003, 1);
   problem.setup();
+  problem.compute_ordered_dofs_indices();
   //problem.solve();
-  problem.import_data();
-  problem.solve2();
+  //problem.import_data();
+  //problem.solve2();
 
+  //problem.export_data_old();
   //problem.export_data();
-  
   return 0;
 }

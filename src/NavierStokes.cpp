@@ -445,7 +445,7 @@ NavierStokes::solve()
 }
 
 void
-NavierStokes::export_data()
+NavierStokes::export_data_old()
 {
   // For now it works in singlecore
   // I'll try to fix it using the ghost of the vector
@@ -470,18 +470,20 @@ NavierStokes::export_data()
 
   std::unique_ptr<int[]> temp;
   std::unique_ptr<double[]> rbuf;
+  std::unique_ptr<int[]> rcount;
 
   if (0 == mpi_rank)
   {
     temp = std::make_unique<int[]>(mpi_size * max_local_size);
     rbuf = std::make_unique<double[]>(solution.size());
+    rcount = std::make_unique<int[]>(mpi_size);
   }
 
   for (unsigned int i = 0; i < max_local_size; ++i)
   {
     MPI_Gather(&local_indices.at(i), 1, MPI_UNSIGNED, temp.get() +
       i * mpi_size, 1, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
-    MPI_Barrier(MPI_COMM_WORLD);
+    //MPI_Barrier(MPI_COMM_WORLD);
   }
 
   for (unsigned int i = 0; i < max_local_size; ++i)
@@ -498,7 +500,7 @@ NavierStokes::export_data()
     if (0 == mpi_rank)
     {
       int *displs = temp.get() + i * mpi_size;
-      std::unique_ptr<int[]> rcount = std::make_unique<int[]>(mpi_size);
+      //std::unique_ptr<int[]> rcount = std::make_unique<int[]>(mpi_size);
 
       for (unsigned int j = 0; j < mpi_size; ++j)
       {
@@ -511,15 +513,302 @@ NavierStokes::export_data()
       MPI_Gatherv(&local_data, scount, MPI_DOUBLE, nullptr, 
         nullptr, nullptr, MPI_DOUBLE, 0, MPI_COMM_WORLD);
   }
-  MPI_Barrier(MPI_COMM_WORLD);
+  //MPI_Barrier(MPI_COMM_WORLD);
   if (mpi_rank == 0)
   {
-    std::ofstream output_file("test4.bin", std::fstream::binary);
+    // Temporarly hard coded file
+    std::ofstream output_file("test5.bin", std::fstream::binary);
     output_file.write((char *)rbuf.get(), solution.size() * sizeof(double));
     output_file.close();
   }
 }
 
+
+void
+NavierStokes::export_data()
+{
+  // After many tries I realized that would be enough to save
+  // the dofs values by their position in the locally owned
+  // dofs and not by their index
+
+  TrilinosWrappers::MPI::BlockVector solution_ghost(block_owned_dofs,
+    block_relevant_dofs,
+    MPI_COMM_WORLD);
+  solution_ghost = solution;
+
+  unsigned int local_size = solution.locally_owned_size();
+
+  std::unique_ptr<double[]> rbuf;
+  std::unique_ptr<int[]> rcount;
+  std::unique_ptr<int[]> displs;
+  std::unique_ptr<double[]> local_data = 
+    std::make_unique<double[]>(local_size);
+  
+  unsigned int min_index = locally_owned_dofs.nth_index_in_set(0);
+
+  for (unsigned int i = 0; i < local_size; ++i)
+  {
+    auto index = locally_owned_dofs.nth_index_in_set(i);
+
+    if (index < min_index)
+      min_index = index;
+
+    local_data.get()[i] = solution_ghost[index];
+  }
+
+  if (0 == mpi_rank)
+  {
+    rbuf = std::make_unique<double[]>(solution.size());
+    rcount = std::make_unique<int[]>(mpi_size);
+    displs = std::make_unique<int[]>(mpi_size);
+  }
+  
+  MPI_Gather(&local_size, 1, MPI_INT, rcount.get(), 1, MPI_INT,
+    0, MPI_COMM_WORLD);
+
+  MPI_Gather(&min_index, 1, MPI_INT, displs.get(), 1, MPI_INT,
+    0, MPI_COMM_WORLD);
+
+  if (0 == mpi_rank)
+  {
+    MPI_Gatherv(local_data.get(), local_size, MPI_DOUBLE,
+      rbuf.get(), rcount.get(), displs.get(),
+      MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  }
+  else
+  {
+    MPI_Gatherv(local_data.get(), local_size, MPI_DOUBLE,
+      nullptr, nullptr, nullptr, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  }
+  
+  if (mpi_rank == 0)
+  {
+    // Temporarly hard coded file
+    std::ofstream output_file("test5.bin", std::fstream::binary);
+    output_file.write((char *)rbuf.get(), solution.size() * sizeof(double));
+    output_file.close();
+  }
+
+}
+
+
+void
+NavierStokes::compute_ordered_dofs_indices()
+{
+  const unsigned int dofs_per_cell = fe->dofs_per_cell;
+
+  unsigned int counter = 0;
+
+  std::vector<std::pair<unsigned int, int>> 
+    ordered_dofs(locally_relevant_dofs.n_elements(), {0, -1});
+
+  std::vector<types::global_dof_index> dof_indices(dofs_per_cell);
+  // <count of non repeating dofs, cell id>
+  std::vector<std::pair<unsigned int, unsigned int>> 
+    non_repeating_dofs_per_cell(mesh.n_locally_owned_active_cells(),
+    {0, 0});
+
+  unsigned int local_owned_cell_index = 0;
+  for (const auto &cell : dof_handler.active_cell_iterators())
+  {
+    if (!cell->is_locally_owned())
+      continue;
+    
+    cell->get_dof_indices(dof_indices);
+
+    non_repeating_dofs_per_cell.at(local_owned_cell_index).second =
+      cell->id().get_coarse_cell_id();
+
+    for (const auto &dof_index : dof_indices)
+    {
+      unsigned int local_index = 
+        locally_relevant_dofs.index_within_set(dof_index);
+      
+      /*
+      if (numbers::invalid_dof_index == local_index)
+        continue;
+      */
+
+      auto &current_pair = ordered_dofs.at(local_index);
+      if (-1 == current_pair.second)
+      {
+        current_pair.first = counter++;
+        //current_pair.second = cell->id().get_coarse_cell_id();
+        current_pair.second = local_owned_cell_index;
+        non_repeating_dofs_per_cell.at(local_owned_cell_index).first++;
+      }
+    }
+    ++local_owned_cell_index;
+  }
+  unsigned int temp = 0;
+  for (auto &val : non_repeating_dofs_per_cell)
+  {
+    val.first += temp;
+    temp = val.first;
+    //std::cout << val.second << " " << val.first << std::endl;
+  }
+
+  unsigned int local_size = 2 * counter;
+  
+  // Now we have to make the data to send contiguous
+  std::unique_ptr<unsigned int[]> outbuff =
+    std::make_unique<unsigned int[]>(local_size);
+  
+  for (unsigned int j = 0; j < ordered_dofs.size(); ++j)
+  //for (unsigned int j = ordered_dofs.size() - 1; j >= 0; --j)
+  {
+    auto &local_pair = ordered_dofs.at(j);
+    if (-1 == local_pair.second)
+      continue;
+    
+    unsigned int current_cell_index = local_pair.second;
+    unsigned int *current_array = 
+      &outbuff.get()[2 * (--non_repeating_dofs_per_cell.at(current_cell_index).first)];
+    current_array[0] = locally_relevant_dofs.nth_index_in_set(j);
+    //current_array[1] = local_pair.first;
+    current_array[1] = non_repeating_dofs_per_cell.at(current_cell_index).second;
+    
+  }
+
+  // Now we have to send the array of array to the master process
+  std::unique_ptr<int[]> rcount;
+  std::unique_ptr<int[]> rdisps;
+  std::unique_ptr<unsigned int[]> rbuf;
+  
+  if (0 == mpi_rank)
+  {
+    rcount = std::make_unique<int[]>(mpi_size);
+    rdisps = std::make_unique<int[]>(mpi_size);
+  }
+  MPI_Gather(&local_size, 1, MPI_INT, rcount.get(), 1, MPI_INT,
+    0, MPI_COMM_WORLD);
+  unsigned int total_size_to_alloc = 0;
+  if (0 == mpi_rank)
+  {
+
+    for (unsigned int j = 0; j < mpi_size; ++j)
+    {
+      rdisps.get()[j] = total_size_to_alloc;
+      total_size_to_alloc += rcount.get()[j];
+    }
+
+    rbuf = std::make_unique<unsigned int[]>(total_size_to_alloc);
+    
+    MPI_Gatherv(outbuff.get(), local_size, MPI_UNSIGNED, rbuf.get(),
+      rcount.get(), rdisps.get(), MPI_UNSIGNED, 0, MPI_COMM_WORLD);
+  }
+  else
+  {
+    MPI_Gatherv(outbuff.get(), local_size, MPI_UNSIGNED, nullptr,
+      nullptr, nullptr, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
+  }
+
+  if (0 == mpi_rank)
+  {
+    // Now we have to merge the vectors for each process sorting them by
+    // global cell index, in order to renumber them
+
+    std::vector<std::pair<unsigned int, bool>> reordered(dof_handler.n_dofs(), {0, false});
+    std::vector<unsigned int*> arrays_current_pointers(mpi_size, nullptr);
+    std::vector<unsigned int*> arrays_last_pointers(mpi_size, nullptr);
+    
+    for (unsigned int i = 0; i < mpi_size; ++i)
+    {
+      arrays_current_pointers.at(i) = &rbuf.get()[rdisps.get()[i]];
+      int current_size = rcount.get()[i];
+      arrays_last_pointers.at(i) = &arrays_current_pointers.at(i)[current_size];
+    }
+
+    bool are_all_finished = false;
+    unsigned int k = 0;
+    while (!are_all_finished)
+    {
+      // < cell id, mpi_rank >
+      std::pair<unsigned int, unsigned int> min_cell_id = {-1, 0};
+
+      are_all_finished = true;
+      for (unsigned int i = 0; i < mpi_size; ++i)
+      {
+        if (arrays_last_pointers.at(i) <= arrays_current_pointers.at(i))
+        {
+          are_all_finished = are_all_finished && true;
+          continue;
+        }
+        are_all_finished = false;
+
+        unsigned int current_cell_index = arrays_current_pointers.at(i)[1];
+        if (current_cell_index <= min_cell_id.first)
+        {
+          min_cell_id.first = current_cell_index;
+          min_cell_id.second = i;
+        }
+      }
+
+      if (are_all_finished)
+        break;
+
+      unsigned int *current_subarray = &arrays_current_pointers.at(min_cell_id.second)[0];
+      
+      unsigned int dof_id = current_subarray[0];
+
+      if (!reordered.at(dof_id).second)
+      {
+        reordered.at(dof_id).first = k++;
+        reordered.at(dof_id).second = true;
+      }
+
+      arrays_current_pointers.at(min_cell_id.second) += 2;
+    }
+    /*
+    for (unsigned int i = 0; i < dof_handler.n_dofs(); ++i)
+    {
+      std::cout << "Dof " << i << ":\t" << reordered.at(i).first << std::endl;  
+    }
+    */
+
+    // Now that we have the reordered indices, we have to take them back to each process
+    // Since we don't need to send back all the data
+    for (unsigned int i = 0; i < mpi_size; ++i)
+    {
+      unsigned int current_size = rcount.get()[i];
+      unsigned int *current_array = &rbuf.get()[rdisps.get()[i]];
+      
+      for (unsigned int j = 0; j < current_size; j += 2)
+      {
+        //unsigned int new_index = j / 2;
+        unsigned int new_id = reordered.at(current_array[j]).first;
+        current_array[j + 1] = new_id;
+      }
+      //rcount.get()[i] /= 2;
+    }
+
+    // Send data using mpi scatterv
+    //local_size /= 2;
+    MPI_Scatterv(rbuf.get(), rcount.get(), rdisps.get(), MPI_UNSIGNED, 
+      outbuff.get(), local_size, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
+  }
+  else
+  {
+    // Recive data using mpi scatterv
+    //local_size /= 2;
+    MPI_Scatterv(nullptr, nullptr, nullptr, MPI_UNSIGNED, 
+      outbuff.get(), local_size, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
+  }
+
+  
+  renumbered_dofs.resize(locally_owned_dofs.n_elements());
+  for (unsigned int i = 0; i < local_size; i += 2)
+  {
+    unsigned int dof_id = outbuff[i];
+    unsigned int index = locally_owned_dofs.index_within_set(dof_id);
+    
+    if (numbers::invalid_dof_index == index)
+      continue;
+    
+    renumbered_dofs.at(index) = outbuff[i + 1];
+  }
+
+}
 
 void
 NavierStokes::solve2()
@@ -563,24 +852,62 @@ NavierStokes::solve2()
 void
 NavierStokes::import_data()
 {
-  // For now it works only if we import a vector obtained by
-  // executing the solver with the same number of MPI processes
-  /*
   TrilinosWrappers::MPI::BlockVector solution_ghost(block_owned_dofs,
-  block_relevant_dofs,
-  MPI_COMM_WORLD);
-  */
-  //solution_ghost = solution;
+    block_relevant_dofs,
+    MPI_COMM_WORLD);
 
-  std::ifstream infile("test4.bin", std::fstream::binary);
+  unsigned int local_size = solution.locally_owned_size();
+  unsigned int min_index = locally_owned_dofs.nth_index_in_set(0);
+  for (const auto &index : locally_owned_dofs)
+  {
+    if (index < min_index)
+      min_index = index;
+  }
+
+  std::unique_ptr<int[]> scount;
+  std::unique_ptr<int[]> displs;
+  std::unique_ptr<unsigned char[]> local_data = 
+    std::make_unique<unsigned char[]>(local_size * sizeof(double));
+  
+  if (0 == mpi_rank)
+  {
+    scount = std::make_unique<int[]>(mpi_size);
+    displs = std::make_unique<int[]>(mpi_size);
+  }
+
+  MPI_Gather(&local_size, 1, MPI_INT, scount.get(), 1, MPI_INT,
+    0, MPI_COMM_WORLD);
+
+  MPI_Gather(&min_index, 1, MPI_INT, displs.get(), 1, MPI_INT,
+    0, MPI_COMM_WORLD);
+
+  /*
+  if (0 == mpi_rank)
+  {
+    std::ifstream infile("test5.bin", std::fstream::binary);
+    std::vector<unsigned char> inbuff(std::istreambuf_iterator<char>(infile), {});
+    infile.close();
+
+
+    MPI_Scatterv(inbuff.data(), scount.get(), displs.get(), MPI_CHAR,
+      local_data.get(), local_size, MPI_CHAR, 0, MPI_COMM_WORLD);
+  }
+  else
+  {
+    MPI_Scatterv(nullptr, nullptr, nullptr, MPI_CHAR,
+      local_data.get(), local_size, MPI_CHAR, 0, MPI_COMM_WORLD);
+  }
+  */
+  std::ifstream infile("test5.bin", std::fstream::binary);
   std::vector<unsigned char> inbuff(std::istreambuf_iterator<char>(infile), {});
   infile.close();
   
-  
-  for (const auto &i : locally_owned_dofs)
+  //std::cout << *(double*)&local_data.get()[0] << std::endl;
+  for (unsigned int i = 0; i < local_size; ++i)
   {
-    solution_owned[i] = *(double*)&inbuff[i * sizeof(double)];
+    solution_ghost[locally_owned_dofs.nth_index_in_set(i)] =
+      *(double*)&inbuff[i * sizeof(double)];
   }
-  //std::cout << "Buffer size = " << inbuff.size() << " Bytes" << std::endl; 
-  //solution_owned = solution_ghost;
+  solution_owned = solution_ghost;
+
 }

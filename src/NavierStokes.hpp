@@ -32,6 +32,7 @@
 #include <fstream>
 #include <iostream>
 #include <mpi.h>
+#include <boost/range/adaptor/reversed.hpp>
 
 
 
@@ -338,7 +339,11 @@ public:
 
   void solve();
 
+  void export_data_old();
+
   void export_data();
+
+  void compute_ordered_dofs_indices();
 
   void solve2();
 
@@ -368,6 +373,9 @@ protected:
 
   IndexSet locally_relevant_dofs;
   std::vector<IndexSet> block_relevant_dofs;
+
+  // Useful for saving the renumbered indexes
+  std::vector<types::global_dof_index> renumbered_dofs;
 
   TrilinosWrappers::BlockSparseMatrix system_matrix;
   TrilinosWrappers::MPI::BlockVector deltat_lumped_mass_inv;

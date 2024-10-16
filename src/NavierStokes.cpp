@@ -398,7 +398,7 @@ NavierStokes::output(const unsigned int &time_step) const
   data_out.build_patches();
 
   const std::string output_file_name = "output-stokes";
-  data_out.write_vtu_with_pvtu_record("./",
+  data_out.write_vtu_with_pvtu_record("../output/",
     output_file_name,
     time_step,
     MPI_COMM_WORLD);
@@ -406,27 +406,38 @@ NavierStokes::output(const unsigned int &time_step) const
 
 
 void
-NavierStokes::solve()
+NavierStokes::solve(unsigned int time_step)
 {
   //assemble_matrices();
 
   pcout << "===================================================" << std::endl;
 
-  time = 0.0;
 
   // Initial condition
   {
-    pcout << "Applying initial conditions" << std::endl;
-
-    VectorTools::interpolate(dof_handler, initial_conditions, solution_owned);
+    if (0 == time_step)
+    {
+      time = 0.0;
+      pcout << "Applying initial conditions" << std::endl;
+      VectorTools::interpolate(dof_handler, initial_conditions, solution_owned);
+    }
+    else
+    {
+      time = deltat * time_step;
+      pcout << "Continuing execution from time step "
+        << time_step << std::endl;
+      import_data(time_step);
+    }
+    
     solution = solution_owned;
 
-    output(0);
+    //output(0);
+    export_data(time_step);
 
     pcout << "---------------------------------------------------" << std::endl;    
   }
 
-  unsigned int time_step = 0;
+  //unsigned int time_step = 0;
 
   while (time < T - 0.5 * deltat)
   {
@@ -439,13 +450,17 @@ NavierStokes::solve()
     assemble(time);
     solve_time_step();
     if (time_step % step == 0)
-      output(time_step);
+    {
+      //output(time_step);
+      export_data(time_step);
+    }
+
   }
 
 }
 
 void
-NavierStokes::export_data_old()
+NavierStokes::export_data(const unsigned int &time_step)
 {
   // For now it works in singlecore
   // I'll try to fix it using the ghost of the vector
@@ -517,79 +532,12 @@ NavierStokes::export_data_old()
   //MPI_Barrier(MPI_COMM_WORLD);
   if (mpi_rank == 0)
   {
-    // Temporarly hard coded file
-    std::ofstream output_file("test5.bin", std::fstream::binary);
+    std::string file_name("../cache/state-ns-" + std::to_string(time_step) +
+      ".bin");
+    std::ofstream output_file(file_name, std::fstream::binary);
     output_file.write((char *)rbuf.get(), solution.size() * sizeof(double));
     output_file.close();
   }
-}
-
-
-void
-NavierStokes::export_data()
-{
-  // After many tries I realized that would be enough to save
-  // the dofs values by their position in the locally owned
-  // dofs and not by their index
-
-  TrilinosWrappers::MPI::BlockVector solution_ghost(block_owned_dofs,
-    block_relevant_dofs,
-    MPI_COMM_WORLD);
-  solution_ghost = solution;
-
-  unsigned int local_size = solution.locally_owned_size();
-
-  std::unique_ptr<double[]> rbuf;
-  std::unique_ptr<int[]> rcount;
-  std::unique_ptr<int[]> displs;
-  std::unique_ptr<double[]> local_data = 
-    std::make_unique<double[]>(local_size);
-  
-  unsigned int min_index = locally_owned_dofs.nth_index_in_set(0);
-
-  for (unsigned int i = 0; i < local_size; ++i)
-  {
-    auto index = locally_owned_dofs.nth_index_in_set(i);
-
-    if (index < min_index)
-      min_index = index;
-
-    local_data.get()[i] = solution_ghost[index];
-  }
-
-  if (0 == mpi_rank)
-  {
-    rbuf = std::make_unique<double[]>(solution.size());
-    rcount = std::make_unique<int[]>(mpi_size);
-    displs = std::make_unique<int[]>(mpi_size);
-  }
-  
-  MPI_Gather(&local_size, 1, MPI_INT, rcount.get(), 1, MPI_INT,
-    0, MPI_COMM_WORLD);
-
-  MPI_Gather(&min_index, 1, MPI_INT, displs.get(), 1, MPI_INT,
-    0, MPI_COMM_WORLD);
-
-  if (0 == mpi_rank)
-  {
-    MPI_Gatherv(local_data.get(), local_size, MPI_DOUBLE,
-      rbuf.get(), rcount.get(), displs.get(),
-      MPI_DOUBLE, 0, MPI_COMM_WORLD);
-  }
-  else
-  {
-    MPI_Gatherv(local_data.get(), local_size, MPI_DOUBLE,
-      nullptr, nullptr, nullptr, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-  }
-  
-  if (mpi_rank == 0)
-  {
-    // Temporarly hard coded file
-    std::ofstream output_file("test5.bin", std::fstream::binary);
-    output_file.write((char *)rbuf.get(), solution.size() * sizeof(double));
-    output_file.close();
-  }
-
 }
 
 
@@ -811,47 +759,9 @@ NavierStokes::compute_ordered_dofs_indices()
 
 }
 
-void
-NavierStokes::solve2()
-{
-  //assemble_matrices();
-
-  pcout << "===================================================" << std::endl;
-
-  time = 0.0;
-
-  // Initial condition
-  {
-    pcout << "Applying initial conditions" << std::endl;
-
-    //VectorTools::interpolate(dof_handler, initial_conditions, solution_owned);
-    solution = solution_owned;
-
-    output(0);
-
-    pcout << "---------------------------------------------------" << std::endl;    
-  }
-
-  unsigned int time_step = 0;
-
-  while (time < T - 0.5 * deltat)
-  {
-    time += deltat;
-    ++time_step;
-
-    pcout << "n = " << std::setw(3) << time_step << ", t = " << std::setw(5)
-      << time << ":" << std::flush;
-    
-    assemble(time);
-    solve_time_step();
-    if (time_step % step == 0)
-      output(time_step);
-  }
-
-}
 
 void
-NavierStokes::import_data()
+NavierStokes::import_data(const unsigned int &time_step)
 {
   TrilinosWrappers::MPI::BlockVector solution_ghost(block_owned_dofs,
     block_relevant_dofs,
@@ -859,9 +769,12 @@ NavierStokes::import_data()
 
   unsigned int local_size = solution.locally_owned_size();
 
-  std::ifstream infile("test5.bin", std::fstream::binary);
-  std::vector<unsigned char> inbuff(std::istreambuf_iterator<char>(infile), {});
-  infile.close();
+  std::string file_name("../cache/state-ns-" + std::to_string(time_step) +
+      ".bin");
+  std::ifstream input_file(file_name, std::fstream::binary);
+  std::vector<unsigned char> 
+    inbuff(std::istreambuf_iterator<char>(input_file), {});
+  input_file.close();
   
   //std::cout << *(double*)&local_data.get()[0] << std::endl;
   for (unsigned int i = 0; i < local_size; ++i)
@@ -871,4 +784,27 @@ NavierStokes::import_data()
   }
   solution_owned = solution_ghost;
 
+}
+
+
+void 
+NavierStokes::post_process(const unsigned int &initial_time_step,
+    const unsigned int &final_time_step, const unsigned int &step)
+{
+  pcout << "======================================================="
+    << std::endl;
+  for (unsigned int current_time_step = initial_time_step;
+    current_time_step <= final_time_step; current_time_step += step)
+  {
+    pcout << "Importing time step " << current_time_step
+      << " for post processing" << std::endl;
+    import_data(current_time_step);
+    solution = solution_owned;
+    // Do stuff here
+
+
+    pcout << "Exporting pvtu files for time step " << current_time_step
+      << std::endl;
+    output(current_time_step);
+  }
 }

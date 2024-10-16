@@ -337,17 +337,16 @@ public:
 
   void output(const unsigned int &time_step) const;
 
-  void solve();
+  void solve(unsigned int time_step = 0);
 
-  void export_data_old();
-
-  void export_data();
+  void export_data(const unsigned int &time_step);
 
   void compute_ordered_dofs_indices();
 
-  void solve2();
+  void import_data(const unsigned int &time_step);
 
-  void import_data();
+  void post_process(const unsigned int &initial_time_step,
+    const unsigned int &final_time_step, const unsigned int &step);
 
 
 protected:

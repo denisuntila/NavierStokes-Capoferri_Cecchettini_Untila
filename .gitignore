@@ -37,3 +37,9 @@
 
 # Mesh files
 *.msh
+
+# Binary files used for caching
+*.bin
+
+# Output files
+*vtu

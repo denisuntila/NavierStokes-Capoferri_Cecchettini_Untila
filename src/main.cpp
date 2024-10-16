@@ -13,8 +13,8 @@ int main(int argc, char **argv)
   problem.setup();
   problem.compute_ordered_dofs_indices();
   //problem.solve();
-  //problem.import_data();
-  //problem.solve2();
+  problem.import_data();
+  problem.solve2();
 
   //problem.export_data_old();
   //problem.export_data();

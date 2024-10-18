@@ -13,7 +13,7 @@ int main(int argc, char **argv)
   problem.setup();
   problem.compute_ordered_dofs_indices();
 
-  problem.post_process(100, 700, 10);
+  problem.post_process(250, 500, 10);
 
   return 0;
 }

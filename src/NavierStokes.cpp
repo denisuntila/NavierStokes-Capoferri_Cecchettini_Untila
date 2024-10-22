@@ -465,10 +465,12 @@ NavierStokes::export_data(const unsigned int &time_step)
   // For now it works in singlecore
   // I'll try to fix it using the ghost of the vector
 
+  /*
   TrilinosWrappers::MPI::BlockVector solution_ghost(block_owned_dofs,
     block_relevant_dofs,
     MPI_COMM_WORLD);
   solution_ghost = solution;
+  */
   
   unsigned int local_size = solution.locally_owned_size();
   //std::cout << local_size << std::endl;
@@ -509,7 +511,7 @@ NavierStokes::export_data(const unsigned int &time_step)
     
     if (i < local_size)
     {
-      local_data = solution_ghost[locally_owned_dofs.nth_index_in_set(i)];
+      local_data = solution[locally_owned_dofs.nth_index_in_set(i)];
       scount = 1;
     }
 
@@ -533,7 +535,7 @@ NavierStokes::export_data(const unsigned int &time_step)
   if (mpi_rank == 0)
   {
     std::string file_name("../cache/state-ns-" + std::to_string(time_step) +
-      ".bin");
+      ".dat");
     std::ofstream output_file(file_name, std::fstream::binary);
     output_file.write((char *)rbuf.get(), solution.size() * sizeof(double));
     output_file.close();
@@ -763,14 +765,16 @@ NavierStokes::compute_ordered_dofs_indices()
 void
 NavierStokes::import_data(const unsigned int &time_step)
 {
+  /*
   TrilinosWrappers::MPI::BlockVector solution_ghost(block_owned_dofs,
     block_relevant_dofs,
     MPI_COMM_WORLD);
+  */
 
   unsigned int local_size = solution.locally_owned_size();
 
   std::string file_name("../cache/state-ns-" + std::to_string(time_step) +
-      ".bin");
+      ".dat");
   std::ifstream input_file(file_name, std::fstream::binary);
   std::vector<unsigned char> 
     inbuff(std::istreambuf_iterator<char>(input_file), {});
@@ -779,11 +783,10 @@ NavierStokes::import_data(const unsigned int &time_step)
   //std::cout << *(double*)&local_data.get()[0] << std::endl;
   for (unsigned int i = 0; i < local_size; ++i)
   {
-    solution_ghost[locally_owned_dofs.nth_index_in_set(i)] =
+    solution_owned[locally_owned_dofs.nth_index_in_set(i)] =
       *(double*)&inbuff[renumbered_dofs[i] * sizeof(double)];
   }
-  solution_owned = solution_ghost;
-
+  //solution_owned = solution_ghost;
 }
 
 
@@ -808,3 +811,4 @@ NavierStokes::post_process(const unsigned int &initial_time_step,
     output(current_time_step);
   }
 }
+

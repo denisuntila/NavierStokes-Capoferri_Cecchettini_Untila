@@ -150,10 +150,10 @@ class Mesh:
 
 
 if __name__ == "__main__":
-    a = NacaAirfoil("naca.dat")
+    a = NacaAirfoil("naca2412.dat")
     a.resize(0.5)
 
-    angle = 13 #degrees
+    angle = 10 #degrees
 
     file_name = a.name.replace(" ", "_") + ".geo"
     a.rotate(angle * math.pi / 180.0)

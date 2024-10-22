@@ -39,7 +39,7 @@
 *.msh
 
 # Binary files used for caching
-*.bin
+*/cache/*.dat
 
 # Output files
 *vtu

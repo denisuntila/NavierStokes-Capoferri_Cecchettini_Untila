@@ -336,7 +336,7 @@ NavierStokes::solve_time_step()
 
   //PreconditionIdentity preconditioner;
 
-  /*
+  
   PreconditionASIMPLE preconditioner;
   preconditioner.initialize(
     system_matrix.block(0, 0),
@@ -344,9 +344,9 @@ NavierStokes::solve_time_step()
     system_matrix.block(0, 1),
     solution_owned
   );
-  */
   
   
+  /*
   PreconditionAYosida preconditioner;
   preconditioner.initialize(
     system_matrix.block(0, 0),
@@ -355,6 +355,7 @@ NavierStokes::solve_time_step()
     deltat_lumped_mass_inv,
     solution_owned
   );
+  */
   
   
 
@@ -464,16 +465,8 @@ NavierStokes::export_data(const unsigned int &time_step)
 {
   // For now it works in singlecore
   // I'll try to fix it using the ghost of the vector
-
-  /*
-  TrilinosWrappers::MPI::BlockVector solution_ghost(block_owned_dofs,
-    block_relevant_dofs,
-    MPI_COMM_WORLD);
-  solution_ghost = solution;
-  */
   
   unsigned int local_size = solution.locally_owned_size();
-  //std::cout << local_size << std::endl;
   unsigned int max_local_size = 0;
   MPI_Allreduce(&local_size, &max_local_size,
     1, MPI_UNSIGNED, MPI_MAX, MPI_COMM_WORLD);
@@ -482,8 +475,7 @@ NavierStokes::export_data(const unsigned int &time_step)
   for (unsigned int i = 0; i < max_local_size; ++i)
   {
     local_indices.at(i) = ((i < local_size) ? 
-      (/*locally_owned_dofs.nth_index_in_set(i)*/
-      renumbered_dofs.at(i)) : -1);
+      (renumbered_dofs.at(i)) : -1);
   }
 
   std::unique_ptr<int[]> temp;
@@ -501,7 +493,6 @@ NavierStokes::export_data(const unsigned int &time_step)
   {
     MPI_Gather(&local_indices.at(i), 1, MPI_UNSIGNED, temp.get() +
       i * mpi_size, 1, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
-    //MPI_Barrier(MPI_COMM_WORLD);
   }
 
   for (unsigned int i = 0; i < max_local_size; ++i)
@@ -518,7 +509,6 @@ NavierStokes::export_data(const unsigned int &time_step)
     if (0 == mpi_rank)
     {
       int *displs = temp.get() + i * mpi_size;
-      //std::unique_ptr<int[]> rcount = std::make_unique<int[]>(mpi_size);
 
       for (unsigned int j = 0; j < mpi_size; ++j)
       {
@@ -557,7 +547,6 @@ NavierStokes::compute_ordered_dofs_indices()
   // <count of non repeating dofs, cell id>
   std::vector<std::pair<unsigned int, unsigned int>> 
     non_repeating_dofs_per_cell(mesh.n_locally_owned_active_cells(),
-    /*mesh.n_active_cells(),*/
     {0, 0});
 
   unsigned int local_owned_cell_index = 0;
@@ -585,7 +574,6 @@ NavierStokes::compute_ordered_dofs_indices()
       if (-1 == current_pair.second)
       {
         current_pair.first = counter++;
-        //current_pair.second = cell->id().get_coarse_cell_id();
         current_pair.second = local_owned_cell_index;
         non_repeating_dofs_per_cell.at(local_owned_cell_index).first++;
       }
@@ -597,7 +585,6 @@ NavierStokes::compute_ordered_dofs_indices()
   {
     val.first += temp;
     temp = val.first;
-    //std::cout << val.second << " " << val.first << std::endl;
   }
 
   unsigned int local_size = 2 * counter;
@@ -607,7 +594,6 @@ NavierStokes::compute_ordered_dofs_indices()
     std::make_unique<unsigned int[]>(local_size);
   
   for (unsigned int j = 0; j < ordered_dofs.size(); ++j)
-  //for (unsigned int j = ordered_dofs.size() - 1; j >= 0; --j)
   {
     auto &local_pair = ordered_dofs.at(j);
     if (-1 == local_pair.second)
@@ -615,10 +601,8 @@ NavierStokes::compute_ordered_dofs_indices()
     
     unsigned int current_cell_index = local_pair.second;
     unsigned int *current_array = &outbuff.get()
-      [2 * /*(--non_repeating_dofs_per_cell.at(current_cell_index).first)*/
-      (local_pair.first)];
+      [2 * (local_pair.first)];
     current_array[0] = locally_relevant_dofs.nth_index_in_set(j);
-    //current_array[1] = local_pair.first;
     current_array[1] = non_repeating_dofs_per_cell.at(current_cell_index).second;
     
   }
@@ -726,22 +710,18 @@ NavierStokes::compute_ordered_dofs_indices()
       
       for (unsigned int j = 0; j < current_size; j += 2)
       {
-        //unsigned int new_index = j / 2;
         unsigned int new_id = reordered.at(current_array[j]).first;
         current_array[j + 1] = new_id;
       }
-      //rcount.get()[i] /= 2;
     }
 
     // Send data using mpi scatterv
-    //local_size /= 2;
     MPI_Scatterv(rbuf.get(), rcount.get(), rdisps.get(), MPI_UNSIGNED, 
       outbuff.get(), local_size, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
   }
   else
   {
     // Recive data using mpi scatterv
-    //local_size /= 2;
     MPI_Scatterv(nullptr, nullptr, nullptr, MPI_UNSIGNED, 
       outbuff.get(), local_size, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
   }
@@ -765,11 +745,6 @@ NavierStokes::compute_ordered_dofs_indices()
 void
 NavierStokes::import_data(const unsigned int &time_step)
 {
-  /*
-  TrilinosWrappers::MPI::BlockVector solution_ghost(block_owned_dofs,
-    block_relevant_dofs,
-    MPI_COMM_WORLD);
-  */
 
   unsigned int local_size = solution.locally_owned_size();
 
@@ -780,13 +755,11 @@ NavierStokes::import_data(const unsigned int &time_step)
     inbuff(std::istreambuf_iterator<char>(input_file), {});
   input_file.close();
   
-  //std::cout << *(double*)&local_data.get()[0] << std::endl;
   for (unsigned int i = 0; i < local_size; ++i)
   {
     solution_owned[locally_owned_dofs.nth_index_in_set(i)] =
       *(double*)&inbuff[renumbered_dofs[i] * sizeof(double)];
   }
-  //solution_owned = solution_ghost;
 }
 
 
@@ -804,11 +777,56 @@ NavierStokes::post_process(const unsigned int &initial_time_step,
     import_data(current_time_step);
     solution = solution_owned;
     // Do stuff here
-
+    compute_forces();
 
     pcout << "Exporting pvtu files for time step " << current_time_step
       << std::endl;
     output(current_time_step);
   }
+}
+
+
+void
+NavierStokes::compute_forces()
+{
+  // We must integrate the pressure on the surface we need
+  const unsigned int n_q_face = quadrature_face->size();
+
+  FEFaceValues<dim> fe_face_values(*fe, *quadrature_face,
+    update_values | update_normal_vectors |
+    update_JxW_values);
+  
+
+  FEValuesExtractors::Vector velocity(0);
+  FEValuesExtractors::Scalar pressure(dim);
+
+  lift = 0.0;
+  drag = 0.0;
+
+  for (const auto &cell : dof_handler.active_cell_iterators())
+  {
+
+    if (!cell->at_boundary())
+      continue;
+    
+    for (unsigned int f = 0; f < cell->n_faces(); ++f)
+    {
+      if (cell->face(f)->at_boundary() &&
+        cell->face(f)->boundary_id() == 4)
+      {
+        // Integrate here the forces
+        fe_face_values.reinit(cell, f);
+
+        for (unsigned int q = 0; q < n_q_face; ++q)
+        {
+          lift += fe_face_values.JxW(q);
+        }
+
+      }
+    }
+
+  }
+
+  std::cout << "Integral = " << lift << std::endl;
 }
 

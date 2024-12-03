@@ -9,10 +9,9 @@ int main(int argc, char **argv)
   const unsigned int degree_velocity = 2;
   const unsigned int degree_pressure = 1;
 
-  NavierStokes problem(mesh_file_name, degree_velocity, degree_pressure, 0.001, 0.1, 10);
+  NavierStokes problem(mesh_file_name, degree_velocity, degree_pressure, 0.001, 0.02, 10);
   problem.setup();
   problem.compute_ordered_dofs_indices();
   problem.solve();
-  //problem.import_data();
   return 0;
 }

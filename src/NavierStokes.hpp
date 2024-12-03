@@ -48,7 +48,7 @@ using Q_Type = QGaussSimplex<Dim>;
 class NavierStokes
 {
 public:
-  static constexpr unsigned int dim = 2;
+  static constexpr unsigned int dim = 3;
 
   class ForcingTerm : public Function<dim>
   {
@@ -347,6 +347,8 @@ public:
 
   void post_process(const unsigned int &initial_time_step,
     const unsigned int &final_time_step, const unsigned int &step);
+
+  void compute_forces();
 
 
 protected:

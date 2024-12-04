@@ -5,7 +5,7 @@ int main(int argc, char **argv)
 {
   Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv);
 
-  const std::string mesh_file_name("../mesh/domain3D.msh");
+  const std::string mesh_file_name("../mesh/domain2D.msh");
   const unsigned int degree_velocity = 2;
   const unsigned int degree_pressure = 1;
 
@@ -13,7 +13,7 @@ int main(int argc, char **argv)
   problem.setup();
   problem.compute_ordered_dofs_indices();
 
-  problem.post_process(0, 1000, 10);
+  problem.post_process(0, 20, 10);
 
   return 0;
 }

@@ -48,7 +48,7 @@ using Q_Type = QGaussSimplex<Dim>;
 class NavierStokes
 {
 public:
-  static constexpr unsigned int dim = 3;
+  static constexpr unsigned int dim = 2;
 
   class ForcingTerm : public Function<dim>
   {
@@ -135,173 +135,11 @@ public:
     }
   };
 
-  class PreconditionIdentity
-  {
-  public:
-    // Application of the preconditioner: we just copy the input vector (src)
-    // into the output vector (dst).
-    void
-    vmult(TrilinosWrappers::MPI::BlockVector       &dst,
-          const TrilinosWrappers::MPI::BlockVector &src) const
-    {
-      dst = src;
-    }
+  class PreconditionIdentity;
 
-  protected:
-  };
-
-
+  class PreconditionASIMPLE;
   
-  class PreconditionASIMPLE
-  {
-  public:
-    // Application of the preconditioner: we just copy the input vector (src)
-    // into the output vector (dst).
-    void initialize(const TrilinosWrappers::SparseMatrix &F_,
-      const TrilinosWrappers::SparseMatrix &B_,
-      const TrilinosWrappers::SparseMatrix &Bt_,
-      const TrilinosWrappers::MPI::BlockVector &owned_solution)
-    {
-      F = &F_;
-      B = &B_;
-      Bt = &Bt_;
-      
-      // Creating D inverse
-      // This is a vector since the matrix D is diagonal
-      Di.reinit(owned_solution.block(0));
-      for (unsigned int i : Di.locally_owned_elements())
-      {
-        double temp = F->diag_element(i);
-        Di[i] = 1.0 / temp;
-      }
-
-      // Creating S
-      B->mmult(S, *Bt, Di);
-
-      preconditioner_F.initialize(*F);
-      preconditioner_S.initialize(S);
-
-      vec0.reinit(owned_solution.block(0));
-      vec1.reinit(owned_solution.block(1));
-    }
-
-    void
-    vmult(TrilinosWrappers::MPI::BlockVector &dst,
-          const TrilinosWrappers::MPI::BlockVector &src) const
-    {
-      
-      const unsigned int maxit = 10000;
-      const double tol = 1.e-2;
-      // It didn't work because i applied the preconditioner
-      // starting from the wrong matrix
-
-      // Solve F on block 0    
-      SolverControl solver_control_F(maxit, tol * src.block(0).l2_norm());
-      SolverGMRES<TrilinosWrappers::MPI::Vector> solver_F(solver_control_F);
-      solver_F.solve(*F, vec0, src.block(0), preconditioner_F);
-      B->vmult(vec1, vec0);
-      vec1.sadd(-1.0, src.block(1));
-
-      // Solve the system in S on block 1
-      SolverControl solver_control_S(maxit, tol * vec1.l2_norm());
-      SolverGMRES<TrilinosWrappers::MPI::Vector> solver_S(solver_control_S);
-      solver_S.solve(S, dst.block(1), vec1, preconditioner_S);
-      dst.block(1) *= - 1.0 / alpha;
-
-      Bt->vmult(dst.block(0), dst.block(1));
-      dst.block(0).scale(Di);
-      dst.block(0).sadd(- 1.0, vec0);
-      
-    }
-
-  protected:
-    const double alpha = 0.5;
-
-    const TrilinosWrappers::SparseMatrix *F;
-    const TrilinosWrappers::SparseMatrix *B;
-    const TrilinosWrappers::SparseMatrix *Bt;
-    TrilinosWrappers::SparseMatrix S;
-
-    mutable TrilinosWrappers::MPI::Vector Di;
-    mutable TrilinosWrappers::MPI::Vector vec0;
-    mutable TrilinosWrappers::MPI::Vector vec1;
-
-    TrilinosWrappers::PreconditionILU preconditioner_F;
-    TrilinosWrappers::PreconditionILU preconditioner_S;
-
-  };
-
-  
-  class PreconditionAYosida
-  {
-  public:
-    // Application of the preconditioner: we just copy the input vector (src)
-    // into the output vector (dst).
-    void initialize(const TrilinosWrappers::SparseMatrix &F_,
-      const TrilinosWrappers::SparseMatrix &B_,
-      const TrilinosWrappers::SparseMatrix &Bt_,
-      const TrilinosWrappers::MPI::BlockVector &DTMli_,
-      const TrilinosWrappers::MPI::BlockVector &owned_solution)
-    {
-      F = &F_;
-      B = &B_;
-      Bt = &Bt_;
-      DTMli = &DTMli_;
-
-      // Creating S
-      B->mmult(S, *Bt, DTMli->block(0));
-
-      preconditioner_F.initialize(*F);
-      preconditioner_S.initialize(S);
-
-      vec0.reinit(owned_solution.block(0));
-      vec1.reinit(owned_solution.block(1));
-    }
-
-    void
-    vmult(TrilinosWrappers::MPI::BlockVector &dst,
-          const TrilinosWrappers::MPI::BlockVector &src) const
-    {
-      
-      const unsigned int maxit = 10000;
-      const double tol = 1.e-2;
-      // It didn't work because i applied the preconditioner
-      // starting from the wrong matrix
-
-      // Solve F on block 0    
-      SolverControl solver_control_F(maxit, tol * src.block(0).l2_norm());
-      SolverGMRES<TrilinosWrappers::MPI::Vector> solver_F(solver_control_F);
-      solver_F.solve(*F, vec0, src.block(0), preconditioner_F);
-      B->vmult(vec1, vec0);
-      vec1.sadd(1.0, -1.0, src.block(1));
-
-      // Solve the system in S on block 1
-      SolverControl solver_control_S(maxit, tol * vec1.l2_norm());
-      SolverGMRES<TrilinosWrappers::MPI::Vector> solver_S(solver_control_S);
-      solver_S.solve(S, dst.block(1), vec1, preconditioner_S);
-      //dst.block(1) *= - 1.0;
-
-      Bt->vmult(dst.block(0), dst.block(1));
-      solver_F.solve(*F, dst.block(0), dst.block(0), preconditioner_F);
-      dst.block(0).sadd(- 1.0, vec0);
-      
-    }
-
-  protected:
-
-    const TrilinosWrappers::SparseMatrix *F;
-    const TrilinosWrappers::SparseMatrix *B;
-    const TrilinosWrappers::SparseMatrix *Bt;
-    TrilinosWrappers::SparseMatrix S;
-
-    const TrilinosWrappers::MPI::BlockVector *DTMli;
-    mutable TrilinosWrappers::MPI::Vector vec0;
-    mutable TrilinosWrappers::MPI::Vector vec1;
-
-    TrilinosWrappers::PreconditionILU preconditioner_F;
-    TrilinosWrappers::PreconditionILU preconditioner_S;
-
-  };
+  class PreconditionAYosida;
 
 
 
@@ -399,6 +237,88 @@ protected:
   FunctionH function_h;
 
   double drag, lift;
+};
+
+
+class NavierStokes::PreconditionIdentity
+{
+public:
+// Application of the preconditioner: we just copy the input vector (src)
+// into the output vector (dst).
+  void
+  vmult(TrilinosWrappers::MPI::BlockVector       &dst,
+          const TrilinosWrappers::MPI::BlockVector &src) const
+  {
+      dst = src;
+  }
+
+protected:
+};
+
+
+class NavierStokes::PreconditionASIMPLE
+{
+public:
+  // Application of the preconditioner: we just copy the input vector (src)
+  // into the output vector (dst).
+  void initialize(const TrilinosWrappers::SparseMatrix &F_,
+    const TrilinosWrappers::SparseMatrix &B_,
+    const TrilinosWrappers::SparseMatrix &Bt_,
+    const TrilinosWrappers::MPI::BlockVector &owned_solution);
+
+
+  void
+  vmult(TrilinosWrappers::MPI::BlockVector &dst,
+    const TrilinosWrappers::MPI::BlockVector &src) const;
+
+protected:
+  const double alpha = 0.5;
+
+  const TrilinosWrappers::SparseMatrix *F;
+  const TrilinosWrappers::SparseMatrix *B;
+  const TrilinosWrappers::SparseMatrix *Bt;
+  TrilinosWrappers::SparseMatrix S;
+
+  mutable TrilinosWrappers::MPI::Vector Di;
+  mutable TrilinosWrappers::MPI::Vector vec0;
+  mutable TrilinosWrappers::MPI::Vector vec1;
+
+  TrilinosWrappers::PreconditionILU preconditioner_F;
+  TrilinosWrappers::PreconditionILU preconditioner_S;
+
+};
+
+
+
+class NavierStokes::PreconditionAYosida
+{
+public:
+  // Application of the preconditioner: we just copy the input vector (src)
+  // into the output vector (dst).
+  void initialize(const TrilinosWrappers::SparseMatrix &F_,
+    const TrilinosWrappers::SparseMatrix &B_,
+    const TrilinosWrappers::SparseMatrix &Bt_,
+    const TrilinosWrappers::MPI::BlockVector &DTMli_,
+    const TrilinosWrappers::MPI::BlockVector &owned_solution);
+
+  void
+  vmult(TrilinosWrappers::MPI::BlockVector &dst,
+    const TrilinosWrappers::MPI::BlockVector &src) const;
+
+protected:
+
+  const TrilinosWrappers::SparseMatrix *F;
+  const TrilinosWrappers::SparseMatrix *B;
+  const TrilinosWrappers::SparseMatrix *Bt;
+  TrilinosWrappers::SparseMatrix S;
+
+  const TrilinosWrappers::MPI::BlockVector *DTMli;
+  mutable TrilinosWrappers::MPI::Vector vec0;
+  mutable TrilinosWrappers::MPI::Vector vec1;
+
+  TrilinosWrappers::PreconditionILU preconditioner_F;
+  TrilinosWrappers::PreconditionILU preconditioner_S;
+
 };
 
 #endif

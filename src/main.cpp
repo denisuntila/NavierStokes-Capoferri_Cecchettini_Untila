@@ -13,5 +13,6 @@ int main(int argc, char **argv)
   problem.setup();
   problem.compute_ordered_dofs_indices();
   problem.solve();
+  //problem.compute_forces();
   return 0;
 }

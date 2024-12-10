@@ -794,52 +794,80 @@ NavierStokes::post_process(const unsigned int &initial_time_step,
 void
 NavierStokes::compute_forces()
 {
-  // We must integrate the pressure on the surface we need
+  pcout << "Computing forces: " << std::endl;
+
+  const unsigned int n_q = quadrature->size();
   const unsigned int n_q_face = quadrature_face->size();
 
+  FEValues<dim> fe_values(*fe, *quadrature,
+    update_values | update_gradients |
+    update_quadrature_points | update_JxW_values);
   FEFaceValues<dim> fe_face_values(*fe, *quadrature_face,
     update_values | update_normal_vectors |
     update_JxW_values);
-  
 
   FEValuesExtractors::Vector velocity(0);
   FEValuesExtractors::Scalar pressure(dim);
 
-  lift = 0.0;
   drag = 0.0;
+  lift = 0.0;
 
-  
+  std::vector<Tensor<1, dim>> current_velocity_values(n_q);
+  std::vector<double> current_pressure_values(n_q);
+  std::vector<Tensor<2, dim>> current_velocity_gradients(n_q);
+
+  double llift = 0.0;
+  double ldrag = 0.0;
+
   for (const auto &cell : dof_handler.active_cell_iterators())
   {
-
-    if (!cell->at_boundary())
+    if (!cell->is_locally_owned())
       continue;
-    
-    for (unsigned int f = 0; f < cell->n_faces(); ++f)
+
+    fe_values.reinit(cell);
+
+    fe_values[velocity].get_function_values(solution, current_velocity_values);
+    fe_values[pressure].get_function_values(solution, current_pressure_values);
+    fe_values[velocity].get_function_gradients(solution, current_velocity_gradients);
+
+    if (cell->at_boundary())
     {
-      if (cell->face(f)->at_boundary() &&
-        cell->face(f)->boundary_id() == 4)
+      for (unsigned int f = 0; f < cell->n_faces(); ++f)
       {
-        // Integrate here the forces
-        fe_face_values.reinit(cell, f);
-
-        for (unsigned int q = 0; q < n_q_face; ++q)
+        if (cell->face(f)->at_boundary() &&
+          cell->face(f)->boundary_id() == 4)
         {
-          lift += fe_face_values.JxW(q);
-        }
+          fe_face_values.reinit(cell, f);
 
+          for (unsigned int q = 0; q < n_q_face; ++q)
+          {
+            // Get the values
+            const double nx = fe_face_values.normal_vector(q)[0];
+            const double ny = fe_face_values.normal_vector(q)[1];
+
+            // Construct the tensor, counterwise clock direction of normal
+            Tensor<1, dim> tangent;
+            tangent[0] = ny;
+            tangent[1] = -nx;
+
+            ldrag += nu * fe_face_values.normal_vector(q) * current_velocity_gradients[q] * tangent * ny * fe_face_values.JxW(q);
+
+            ldrag -= current_pressure_values[q] * nx * fe_face_values.JxW(q);
+
+            llift -= nu * fe_face_values.normal_vector(q) * current_velocity_gradients[q] * tangent * nx * fe_face_values.JxW(q);
+
+            llift -= current_pressure_values[q] * ny * fe_face_values.JxW(q);
+          }
+        }
       }
     }
-
   }
-  
-  // Move the local integral to one single MPI process
-  
-  MPI_Allreduce(&lift, &lift, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-
-  pcout << "Integral = " << lift << std::endl;
+  drag = Utilities::MPI::sum(ldrag, MPI_COMM_WORLD);
+  lift = Utilities::MPI::sum(llift, MPI_COMM_WORLD);
+  pcout << "Drag force value : " << drag << " Lift force value : " << lift << std::endl;
+  //vdrag.push_back(drag);
+  //vlift.push_back(lift);
 }
-
 
 
 void

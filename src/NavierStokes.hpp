@@ -68,6 +68,9 @@ public:
       : Function<dim>(dim + 1)
     {}
 
+
+    #ifndef NS_INPUT
+
     virtual void
     vector_value(const Point<dim> &/*p*/, Vector<double> &values) const override
     {
@@ -93,6 +96,16 @@ public:
       else
         return 0.0;
     }
+
+    #else
+
+    virtual void
+    vector_value(const Point<dim> &/*p*/, Vector<double> &values) const override;
+
+    virtual double
+    value(const Point<dim> &/*p*/, const unsigned int component = 0) const override;
+
+    #endif
   };
 
   class FunctionH : public Function<dim>

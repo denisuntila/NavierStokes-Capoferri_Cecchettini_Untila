@@ -539,20 +539,28 @@ NavierStokes::compute_ordered_dofs_indices()
   // We need this function to make possible to restart from a certain time
   // step and for post processing
   // It basically enumerates the dofs in a way that's independent
-  // on the number of mpi processes we execute the program
+  // on the number of mpi processes we execute the program.
+  // I'm sorry if the code is quite unreadable, but the algorithm to
+  // do this enumeration is pretty complicate as well
   
+  // Step 1:
+  // We first need to enumerate the dofs locally without repetitions;
+  // in order to do that we have to iterate over the locally owned cells
+  // Per each cell we have to check if its dofs have already been counted
+  // or not, counting per each cell how many non repeating dofs there are
   const unsigned int dofs_per_cell = fe->dofs_per_cell;
 
   unsigned int counter = 0;
 
+  // The second element of the pair is -1 if the corresponding dof
+  // has not been counted yet, otherwise it contains the local
+  // cell index that contains the dof
   std::vector<std::pair<unsigned int, int>> 
     ordered_dofs(locally_relevant_dofs.n_elements(), {0, -1});
 
   std::vector<types::global_dof_index> dof_indices(dofs_per_cell);
-  // <count of non repeating dofs, cell id>
-  std::vector<std::pair<unsigned int, unsigned int>> 
-    non_repeating_dofs_per_cell(mesh.n_locally_owned_active_cells(),
-    {0, 0});
+  std::vector<unsigned int> cell_local_to_global_map(
+    mesh.n_locally_owned_active_cells(), 0);
 
   unsigned int local_owned_cell_index = 0;
   for (const auto &cell : dof_handler.active_cell_iterators())
@@ -561,8 +569,8 @@ NavierStokes::compute_ordered_dofs_indices()
       continue;
     
     cell->get_dof_indices(dof_indices);
-
-    non_repeating_dofs_per_cell.at(local_owned_cell_index).second =
+    
+    cell_local_to_global_map.at(local_owned_cell_index) = 
       cell->id().get_coarse_cell_id();
 
     for (const auto &dof_index : dof_indices)
@@ -576,20 +584,15 @@ NavierStokes::compute_ordered_dofs_indices()
       
 
       auto &current_pair = ordered_dofs.at(local_index);
+      // if the cell was not visited yet
       if (-1 == current_pair.second)
       {
         current_pair.first = counter++;
         current_pair.second = local_owned_cell_index;
-        non_repeating_dofs_per_cell.at(local_owned_cell_index).first++;
       }
     }
+    // increment the local cell index and go to the next cell
     ++local_owned_cell_index;
-  }
-  unsigned int temp = 0;
-  for (auto &val : non_repeating_dofs_per_cell)
-  {
-    val.first += temp;
-    temp = val.first;
   }
 
   unsigned int local_size = 2 * counter;
@@ -608,7 +611,7 @@ NavierStokes::compute_ordered_dofs_indices()
     unsigned int *current_array = &outbuff.get()
       [2 * (local_pair.first)];
     current_array[0] = locally_relevant_dofs.nth_index_in_set(j);
-    current_array[1] = non_repeating_dofs_per_cell.at(current_cell_index).second;
+    current_array[1] = cell_local_to_global_map.at(current_cell_index);
     
   }
 

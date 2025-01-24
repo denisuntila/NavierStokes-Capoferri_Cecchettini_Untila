@@ -39,9 +39,9 @@ int main(int argc, char **argv)
   const unsigned int degree_pressure = 1;
 
 
-  NavierStokes problem(mesh_file_name, degree_velocity, degree_pressure, 0.01, 1.0, 2);
+  NavierStokes problem(mesh_file_name, degree_velocity, degree_pressure, 0.01, 5.6, 2);
   problem.setup();
   problem.compute_ordered_dofs_indices();
-  problem.solve();
+  problem.solve(550);
   return 0;
 }

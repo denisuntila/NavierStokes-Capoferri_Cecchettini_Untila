@@ -330,6 +330,7 @@ NavierStokes::assemble(const double &time)
 void
 NavierStokes::solve_time_step()
 {
+  auto start_time = std::chrono::high_resolution_clock::now();
   SolverControl solver_control(500, 1e-6 * system_rhs.l2_norm());
 
   SolverGMRES<TrilinosWrappers::MPI::BlockVector> solver(solver_control);
@@ -346,6 +347,7 @@ NavierStokes::solve_time_step()
   );
   
   
+  
   /*
   PreconditionAYosida preconditioner;
   preconditioner.initialize(
@@ -357,10 +359,21 @@ NavierStokes::solve_time_step()
   );
   */
   
-  
+  auto end_time_prec = std::chrono::high_resolution_clock::now();
 
   solver.solve(system_matrix, solution_owned, system_rhs, preconditioner);
+
+  auto end_time_solve = std::chrono::high_resolution_clock::now();
+
   pcout << "  " << solver_control.last_step() << " GMRES iterations" << std::endl;
+  pcout << "Elapsed time for preconditioner initialisation: " 
+    << std::chrono::duration<double>(end_time_prec - start_time).count()
+    << " [s]" << std::endl;
+  pcout << "Elapsed time for time step solution: " 
+    << std::chrono::duration<double>(end_time_solve - end_time_prec).count()
+    << " [s]" << std::endl;
+  
+  pcout << "-----------------------------------" << std::endl;
 
   solution = solution_owned;
 
@@ -540,8 +553,6 @@ NavierStokes::compute_ordered_dofs_indices()
   // step and for post processing
   // It basically enumerates the dofs in a way that's independent
   // on the number of mpi processes we execute the program.
-  // I'm sorry if the code is quite unreadable, but the algorithm to
-  // do this enumeration is pretty complicate as well
   
   // Step 1:
   // We first need to enumerate the dofs locally without repetitions;
@@ -615,7 +626,7 @@ NavierStokes::compute_ordered_dofs_indices()
     
   }
 
-  // Now we have to send the array of array to the master process
+  // Step 2: gather data from all processes to the root process
   std::unique_ptr<int[]> rcount;
   std::unique_ptr<int[]> rdisps;
   std::unique_ptr<unsigned int[]> rbuf;
@@ -648,6 +659,7 @@ NavierStokes::compute_ordered_dofs_indices()
       nullptr, nullptr, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
   }
 
+  // Step 3: merge and renumber dofs on the master process
   if (0 == mpi_rank)
   {
     // Now we have to merge the vectors for each process sorting them by
@@ -734,7 +746,7 @@ NavierStokes::compute_ordered_dofs_indices()
       outbuff.get(), local_size, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
   }
 
-  
+  // Step 4: Update local renumbered dofs
   renumbered_dofs.resize(locally_owned_dofs.n_elements());
   for (unsigned int i = 0; i < local_size; i += 2)
   {

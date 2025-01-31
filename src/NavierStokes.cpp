@@ -930,14 +930,16 @@ NavierStokes::PreconditionASIMPLE::vmult(
 
   // Solve F on block 0    
   SolverControl solver_control_F(maxit, tol * src.block(0).l2_norm());
-  SolverGMRES<TrilinosWrappers::MPI::Vector> solver_F(solver_control_F);
+  //SolverGMRES<TrilinosWrappers::MPI::Vector> solver_F(solver_control_F);
+  TrilinosWrappers::SolverGMRES solver_F(solver_control_F);
   solver_F.solve(*F, vec0, src.block(0), preconditioner_F);
   B->vmult(vec1, vec0);
   vec1.sadd(-1.0, src.block(1));
 
   // Solve the system in S on block 1
   SolverControl solver_control_S(maxit, tol * vec1.l2_norm());
-  SolverGMRES<TrilinosWrappers::MPI::Vector> solver_S(solver_control_S);
+  //SolverGMRES<TrilinosWrappers::MPI::Vector> solver_S(solver_control_S);
+  TrilinosWrappers::SolverGMRES solver_S(solver_control_S);
   solver_S.solve(S, dst.block(1), vec1, preconditioner_S);
   dst.block(1) *= - 1.0 / alpha;
 

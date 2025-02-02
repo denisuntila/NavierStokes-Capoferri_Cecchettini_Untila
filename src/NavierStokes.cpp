@@ -326,6 +326,15 @@ NavierStokes::assemble(const double &time)
   }
 }
 
+void NavierStokes::set_re_number(int Re)
+{
+  pcout << "-----------------------------------" << std::endl;
+  double U = inlet_velocity.get_mean_vel();
+  nu = (U * Diameter) / Re;
+  pcout << "New reynolds number setted to " << Re << " with nu = " << nu <<  " ." << std::endl;
+  pcout << "-----------------------------------" << std::endl;
+}
+
 
 void
 NavierStokes::solve_time_step()
@@ -373,7 +382,8 @@ NavierStokes::solve_time_step()
     << std::chrono::duration<double>(end_time_solve - end_time_prec).count()
     << " [s]" << std::endl;
   
-  pcout << "-----------------------------------" << std::endl;
+  pcout << std::endl;
+  // pcout << "-----------------------------------" << std::endl;
 
   solution = solution_owned;
 
@@ -426,6 +436,8 @@ NavierStokes::solve(unsigned int time_step)
 
   pcout << "===================================================" << std::endl;
 
+  std::ofstream output_file("forces_vs_time.csv");
+  output_file << "time,Drag,Lift,Cd,Cl\n";
 
   // Initial condition
   {
@@ -463,13 +475,17 @@ NavierStokes::solve(unsigned int time_step)
     
     assemble(time);
     solve_time_step();
+    compute_forces(time);
+    output_file << time << "," << drag << "," << lift << "," << cd << "," << cl << "\n";
+
     if (time_step % step == 0)
     {
-      //output(time_step);
+      output(time_step);
       export_data(time_step);
     }
 
   }
+  output_file.close();
 
 }
 
@@ -797,7 +813,7 @@ NavierStokes::post_process(const unsigned int &initial_time_step,
     import_data(current_time_step);
     solution = solution_owned;
     // Do stuff here
-    compute_forces();
+    compute_forces(current_time_step);
 
     pcout << "Exporting pvtu files for time step " << current_time_step
       << std::endl;
@@ -807,7 +823,7 @@ NavierStokes::post_process(const unsigned int &initial_time_step,
 
 
 void
-NavierStokes::compute_forces()
+NavierStokes::compute_forces(const double &time)
 {
   pcout << "Computing forces: " << std::endl;
 
@@ -879,9 +895,15 @@ NavierStokes::compute_forces()
   }
   drag = Utilities::MPI::sum(ldrag, MPI_COMM_WORLD);
   lift = Utilities::MPI::sum(llift, MPI_COMM_WORLD);
-  pcout << "Drag force value : " << drag << " Lift force value : " << lift << std::endl;
-  //vdrag.push_back(drag);
-  //vlift.push_back(lift);
+
+  double U = inlet_velocity.get_mean_vel();         // Velocità media in ingresso
+
+  cd = 2 * drag / (U * U * Diameter);
+  cl = 2 * lift / (U * U * Diameter);
+
+  pcout << "Drag coefficient (Cd): " << cd << "   Lift coefficient (Cl): " << cl << std::endl;
+  pcout << "---------------------------------------------------" << std::endl;
+
 }
 
 

@@ -17,6 +17,7 @@
 #include <deal.II/dofs/dof_tools.h>
 
 #include <deal.II/grid/grid_in.h>
+#include <deal.II/grid/grid_tools.h>
 
 #include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/solver_gmres.h>
@@ -71,44 +72,37 @@ public:
       : Function<dim>(dim + 1)
     {}
 
-
-    #ifndef NS_INPUT
-
     virtual void
-    vector_value(const Point<dim> &/*p*/, Vector<double> &values) const override
+    vector_value(const Point<dim> &p, Vector<double> &values) const override
     {
-      //values[0] = 1.0;
+
       for (unsigned int i = 0; i < dim + 1; ++i)
         values[i] = 0.0;
-      if (/*p[1] < 0.24*/ 1)
-        values[0] = 3.0;
-      
-      //values[0] = 10.0;
+
+      values[0] = 4 * U_m * p[1] * (H- p[1]) / (H * H);
+
     }
 
     virtual double
-    value(const Point<dim> &/*p*/, const unsigned int component = 0) const override
+    value(const Point<dim> &p, const unsigned int component) const
     {
-      if (/*component == 1 ||*/ component == 0)
+      if (component == 0)
       {
-        if (/*p[1] < 0.24*/1)
-          return 3.0;
-        else
-          return 0.0;
+        return 4 * U_m * p[1] * (H - p[1]) / (H * H);
       }
       else
         return 0.0;
     }
 
-    #else
+    double get_mean_vel()
+    {
+      return 2 * U_m / 3;
+    }
 
-    virtual void
-    vector_value(const Point<dim> &/*p*/, Vector<double> &values) const override;
+    protected:
+      double U_m = 1.5;
+      double H = 0.41;
 
-    virtual double
-    value(const Point<dim> &/*p*/, const unsigned int component = 0) const override;
-
-    #endif
   };
 
   class FunctionH : public Function<dim>
@@ -179,6 +173,8 @@ public:
 
   void setup();
 
+  void set_re_number(int Re);
+
   void assemble_matrices();
 
   void assemble_rhs(const double &time);
@@ -202,7 +198,7 @@ public:
   void post_process(const unsigned int &initial_time_step,
     const unsigned int &final_time_step, const unsigned int &step);
 
-  void compute_forces();
+  void compute_forces(const double &time);
 
 
 protected:
@@ -238,8 +234,9 @@ protected:
   TrilinosWrappers::MPI::BlockVector solution_owned;
   TrilinosWrappers::MPI::BlockVector solution;
 
-  const double nu = 1.e-3;
+  double nu = 1.e-3;
   const double p_out = 10.0;
+  const double Diameter = 0.1;
 
   const double deltat;
 
@@ -253,6 +250,7 @@ protected:
   FunctionH function_h;
 
   double drag, lift;
+  double cd, cl;
 };
 
 

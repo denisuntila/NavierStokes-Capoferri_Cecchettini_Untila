@@ -1,12 +1,12 @@
-#include "NavierStokes.hpp"
+#include "NavierStokes3D.hpp"
 
 
 void
-NavierStokes::setup()
+NavierStokes3D::setup()
 {
   // Import the mesh
   {
-    pcout << "Importing the mesh from " << mesh_file_name << std::endl;
+    pcout << "Importing the mesh from " << mesh_file_name << " with dim " << dim << std::endl;
 
     Triangulation<dim> mesh_serial; 
     GridIn<dim> grid_in;
@@ -131,7 +131,7 @@ NavierStokes::setup()
 }
 
 void
-NavierStokes::assemble(const double &time)
+NavierStokes3D::assemble(const double &time)
 {
 
   const unsigned int dofs_per_cell = fe->dofs_per_cell;
@@ -327,7 +327,7 @@ NavierStokes::assemble(const double &time)
   }
 }
 
-void NavierStokes::set_re_number(int Re)
+void NavierStokes3D::set_re_number(int Re)
 {
   pcout << "-----------------------------------" << std::endl;
   double U = inlet_velocity.get_mean_vel();
@@ -338,7 +338,7 @@ void NavierStokes::set_re_number(int Re)
 
 
 void
-NavierStokes::solve_time_step()
+NavierStokes3D::solve_time_step()
 {
   auto start_time = std::chrono::high_resolution_clock::now();
   SolverControl solver_control(500, 1e-6 * system_rhs.l2_norm());
@@ -392,7 +392,7 @@ NavierStokes::solve_time_step()
 
 
 void
-NavierStokes::output(const unsigned int &time_step) const
+NavierStokes3D::output(const unsigned int &time_step) const
 {
   TrilinosWrappers::MPI::BlockVector solution_ghost(block_owned_dofs,
     block_relevant_dofs,
@@ -431,7 +431,7 @@ NavierStokes::output(const unsigned int &time_step) const
 
 
 void
-NavierStokes::solve(unsigned int time_step)
+NavierStokes3D::solve(unsigned int time_step)
 {
   //assemble_matrices();
 
@@ -474,7 +474,7 @@ NavierStokes::solve(unsigned int time_step)
     pcout << "n = " << std::setw(3) << time_step << ", t = " << std::setw(5)
       << time << ":" << std::flush;
 
-    nu = (inlet_velocity.get_mean_vel() * std::sin(M_PI * time / 8) * Diameter) / 100;
+    // nu = (inlet_velocity.get_mean_vel() * std::sin(M_PI * time / 8) * Diameter) / 100;
     assemble(time);
     solve_time_step();
     compute_forces(time);
@@ -492,7 +492,7 @@ NavierStokes::solve(unsigned int time_step)
 }
 
 void
-NavierStokes::export_data(const unsigned int &time_step)
+NavierStokes3D::export_data(const unsigned int &time_step)
 {
   // For now it works in singlecore
   // I'll try to fix it using the ghost of the vector
@@ -565,7 +565,7 @@ NavierStokes::export_data(const unsigned int &time_step)
 
 
 void
-NavierStokes::compute_ordered_dofs_indices()
+NavierStokes3D::compute_ordered_dofs_indices()
 {
   // We need this function to make possible to restart from a certain time
   // step and for post processing
@@ -781,7 +781,7 @@ NavierStokes::compute_ordered_dofs_indices()
 
 
 void
-NavierStokes::import_data(const unsigned int &time_step)
+NavierStokes3D::import_data(const unsigned int &time_step)
 {
 
   unsigned int local_size = solution.locally_owned_size();
@@ -802,7 +802,7 @@ NavierStokes::import_data(const unsigned int &time_step)
 
 
 void 
-NavierStokes::post_process(const unsigned int &initial_time_step,
+NavierStokes3D::post_process(const unsigned int &initial_time_step,
     const unsigned int &final_time_step, const unsigned int &step)
 {
   pcout << "======================================================="
@@ -825,7 +825,7 @@ NavierStokes::post_process(const unsigned int &initial_time_step,
 
 
 void
-NavierStokes::compute_forces(const double &time)
+NavierStokes3D::compute_forces(const double &time)
 {
   pcout << "Computing forces: " << std::endl;
 
@@ -882,6 +882,7 @@ NavierStokes::compute_forces(const double &time)
             Tensor<1, dim> tangent;
             tangent[0] = ny;
             tangent[1] = -nx;
+            tangent[2] = 0;
 
             ldrag += nu * fe_face_values.normal_vector(q) * current_velocity_gradients[q] * tangent * ny * fe_face_values.JxW(q);
 
@@ -898,10 +899,10 @@ NavierStokes::compute_forces(const double &time)
   drag = Utilities::MPI::sum(ldrag, MPI_COMM_WORLD);
   lift = Utilities::MPI::sum(llift, MPI_COMM_WORLD);
 
-  double U = inlet_velocity.get_mean_vel() * std::sin(M_PI * time / 8);         // Velocità media in ingresso
+  double U = inlet_velocity.get_mean_vel();         // Velocità media in ingresso
 
-  cd = 2 * drag / (U * U * Diameter);
-  cl = 2 * lift / (U * U * Diameter);
+  cd = 2 * drag / (U * U * Diameter * 0.41);
+  cl = 2 * lift / (U * U * Diameter * 0.41);
 
   pcout << "Drag coefficient (Cd): " << cd << "   Lift coefficient (Cl): " << cl << std::endl;
   pcout << "---------------------------------------------------" << std::endl;
@@ -910,7 +911,7 @@ NavierStokes::compute_forces(const double &time)
 
 
 void
-NavierStokes::PreconditionASIMPLE::initialize(
+NavierStokes3D::PreconditionASIMPLE::initialize(
   const TrilinosWrappers::SparseMatrix &F_,
   const TrilinosWrappers::SparseMatrix &B_,
   const TrilinosWrappers::SparseMatrix &Bt_,
@@ -942,7 +943,7 @@ NavierStokes::PreconditionASIMPLE::initialize(
 
 
 void
-NavierStokes::PreconditionASIMPLE::vmult(
+NavierStokes3D::PreconditionASIMPLE::vmult(
   TrilinosWrappers::MPI::BlockVector &dst,
   const TrilinosWrappers::MPI::BlockVector &src
 ) const
@@ -974,7 +975,7 @@ NavierStokes::PreconditionASIMPLE::vmult(
 
 
 void
-NavierStokes::PreconditionAYosida::initialize(
+NavierStokes3D::PreconditionAYosida::initialize(
   const TrilinosWrappers::SparseMatrix &F_,
   const TrilinosWrappers::SparseMatrix &B_,
   const TrilinosWrappers::SparseMatrix &Bt_,
@@ -1000,7 +1001,7 @@ NavierStokes::PreconditionAYosida::initialize(
 
 
 void
-NavierStokes::PreconditionAYosida::vmult(
+NavierStokes3D::PreconditionAYosida::vmult(
   TrilinosWrappers::MPI::BlockVector &dst,
   const TrilinosWrappers::MPI::BlockVector &src
 ) const

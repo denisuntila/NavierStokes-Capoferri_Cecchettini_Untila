@@ -49,10 +49,10 @@ using FE_Type = FE_SimplexP<Dim>;
 template<size_t Dim>
 using Q_Type = QGaussSimplex<Dim>;
 
-class NavierStokes
+class NavierStokes3D
 {
 public:
-  static constexpr unsigned int dim = 2;
+  static constexpr unsigned int dim = 3;
 
   class ForcingTerm : public Function<dim>
   {
@@ -79,7 +79,7 @@ public:
       for (unsigned int i = 0; i < dim + 1; ++i)
         values[i] = 0.0;
 
-      values[0] = 4 * U_m * p[1] * (H- p[1]) * std::sin(M_PI * get_time()/ 8) / (H * H);
+      values[0] = 16.0 * U_m * p[1] * p[2] * (H- p[1]) * (H- p[2]) / (H * H * H * H);
 
     }
 
@@ -88,7 +88,7 @@ public:
     {
       if (component == 0)
       {
-        return 4 * U_m * p[1] * (H - p[1]) * std::sin(M_PI * get_time()/ 8) / (H * H);
+        return 16.0 * U_m * p[1] * p[2] * (H- p[1]) * (H- p[2]) / (H * H * H * H);
       }
       else
         return 0.0;
@@ -96,11 +96,11 @@ public:
 
     double get_mean_vel()
     {
-      return 2 * U_m / 3;
+      return 4.0 * U_m / 9.0;
     }
 
     protected:
-      double U_m = 1.5;
+      double U_m = 0.45;
       double H = 0.41;
 
   };
@@ -153,7 +153,7 @@ public:
 
 
 
-  NavierStokes(const std::string &mesh_file_name_,
+  NavierStokes3D(const std::string &mesh_file_name_,
     const unsigned int &degree_velocity_,
     const unsigned int &degree_pressure_,
     const double &deltat_,
@@ -254,7 +254,7 @@ protected:
 };
 
 
-class NavierStokes::PreconditionIdentity
+class NavierStokes3D::PreconditionIdentity
 {
 public:
 // Application of the preconditioner: we just copy the input vector (src)
@@ -270,7 +270,7 @@ protected:
 };
 
 
-class NavierStokes::PreconditionASIMPLE
+class NavierStokes3D::PreconditionASIMPLE
 {
 public:
   // Application of the preconditioner: we just copy the input vector (src)
@@ -304,7 +304,7 @@ protected:
 
 
 
-class NavierStokes::PreconditionAYosida
+class NavierStokes3D::PreconditionAYosida
 {
 public:
   // Application of the preconditioner: we just copy the input vector (src)

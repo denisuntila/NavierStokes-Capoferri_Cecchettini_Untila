@@ -341,7 +341,7 @@ void
 NavierStokes::solve_time_step()
 {
   auto start_time = std::chrono::high_resolution_clock::now();
-  SolverControl solver_control(500, 1e-6 * system_rhs.l2_norm());
+  SolverControl solver_control(10000, 1e-6 * system_rhs.l2_norm());
 
   SolverGMRES<TrilinosWrappers::MPI::BlockVector> solver(solver_control);
 
@@ -474,7 +474,8 @@ NavierStokes::solve(unsigned int time_step)
     pcout << "n = " << std::setw(3) << time_step << ", t = " << std::setw(5)
       << time << ":" << std::flush;
 
-    nu = (inlet_velocity.get_mean_vel() * std::sin(M_PI * time / 8) * Diameter) / 100;
+    // TESTCASE3
+    //nu = (inlet_velocity.get_mean_vel() * std::sin(M_PI * time / 8) * Diameter) / 100;
     assemble(time);
     solve_time_step();
     compute_forces(time);
@@ -882,6 +883,9 @@ NavierStokes::compute_forces(const double &time)
             Tensor<1, dim> tangent;
             tangent[0] = ny;
             tangent[1] = -nx;
+            #ifdef DIM
+            tangent[2] = 0;
+            #endif
 
             ldrag += nu * fe_face_values.normal_vector(q) * current_velocity_gradients[q] * tangent * ny * fe_face_values.JxW(q);
 
@@ -898,10 +902,15 @@ NavierStokes::compute_forces(const double &time)
   drag = Utilities::MPI::sum(ldrag, MPI_COMM_WORLD);
   lift = Utilities::MPI::sum(llift, MPI_COMM_WORLD);
 
-  double U = inlet_velocity.get_mean_vel() * std::sin(M_PI * time / 8);         // Velocità media in ingresso
+  double U = inlet_velocity.get_mean_vel();//* std::sin(M_PI * time / 8);         // Velocità media in ingresso
 
-  cd = 2 * drag / (U * U * Diameter);
-  cl = 2 * lift / (U * U * Diameter);
+  #ifdef DIM
+  cd = 2.0 * drag / (U * U * Diameter * 0.41);
+  cl = 2.0 * lift / (U * U * Diameter * 0.41);
+  #else
+  cd = 2.0 * drag / (U * U * Diameter);
+  cl = 2.0 * lift / (U * U * Diameter);
+  #endif
 
   pcout << "Drag coefficient (Cd): " << cd << "   Lift coefficient (Cl): " << cl << std::endl;
   pcout << "---------------------------------------------------" << std::endl;
@@ -954,16 +963,16 @@ NavierStokes::PreconditionASIMPLE::vmult(
 
   // Solve F on block 0    
   SolverControl solver_control_F(maxit, tol * src.block(0).l2_norm());
-  //SolverGMRES<TrilinosWrappers::MPI::Vector> solver_F(solver_control_F);
-  TrilinosWrappers::SolverGMRES solver_F(solver_control_F);
+  SolverGMRES<TrilinosWrappers::MPI::Vector> solver_F(solver_control_F);
+  //TrilinosWrappers::SolverGMRES solver_F(solver_control_F);
   solver_F.solve(*F, vec0, src.block(0), preconditioner_F);
   B->vmult(vec1, vec0);
   vec1.sadd(-1.0, src.block(1));
 
   // Solve the system in S on block 1
   SolverControl solver_control_S(maxit, tol * vec1.l2_norm());
-  //SolverGMRES<TrilinosWrappers::MPI::Vector> solver_S(solver_control_S);
-  TrilinosWrappers::SolverGMRES solver_S(solver_control_S);
+  SolverGMRES<TrilinosWrappers::MPI::Vector> solver_S(solver_control_S);
+  //TrilinosWrappers::SolverGMRES solver_S(solver_control_S);
   solver_S.solve(S, dst.block(1), vec1, preconditioner_S);
   dst.block(1) *= - 1.0 / alpha;
 

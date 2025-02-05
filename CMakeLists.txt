@@ -3,10 +3,10 @@ project(NavierStokes LANGUAGES CXX C)
 
 include(./common/cmake-common.cmake)
 
-add_executable(NavierStokes src/main.cpp src/NavierStokes3D.cpp)
+add_executable(NavierStokes src/main.cpp src/NavierStokes.cpp)
 deal_ii_setup_target(NavierStokes)
 
-add_executable(postprocess src/postprocess.cpp src/NavierStokes3D.cpp)
+add_executable(postprocess src/postprocess.cpp src/NavierStokes.cpp)
 deal_ii_setup_target(postprocess)
 
 

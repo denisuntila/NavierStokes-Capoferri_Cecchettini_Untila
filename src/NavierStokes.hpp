@@ -37,6 +37,7 @@
 //#include <boost/range/adaptor/reversed.hpp>
 
 #include <chrono>
+#define DIM 3
 
 
 
@@ -52,7 +53,11 @@ using Q_Type = QGaussSimplex<Dim>;
 class NavierStokes
 {
 public:
+  #ifdef DIM
+  static constexpr unsigned int dim = 3;
+  #else
   static constexpr unsigned int dim = 2;
+  #endif
 
   class ForcingTerm : public Function<dim>
   {
@@ -79,7 +84,12 @@ public:
       for (unsigned int i = 0; i < dim + 1; ++i)
         values[i] = 0.0;
 
-      values[0] = 4 * U_m * p[1] * (H- p[1]) * std::sin(M_PI * get_time()/ 8) / (H * H);
+      #ifdef DIM
+      values[0] = 16.0 * U_m * p[1] * p[2] * (H- p[1]) * (H- p[2]) / (H * H * H * H);
+      #else
+      //values[0] = 4.0 * U_m * p[1] * (H- p[1]) * std::sin(M_PI * get_time()/ 8.0) / (H * H);
+      values[0] = 4.0 * U_m * p[1] * (H- p[1]) / (H * H);
+      #endif
 
     }
 
@@ -88,7 +98,12 @@ public:
     {
       if (component == 0)
       {
-        return 4 * U_m * p[1] * (H - p[1]) * std::sin(M_PI * get_time()/ 8) / (H * H);
+        #ifdef DIM
+        return 16.0 * U_m * p[1] * p[2] * (H- p[1]) * (H- p[2]) / (H * H * H * H);
+        #else
+        //return 4.0 * U_m * p[1] * (H- p[1]) * std::sin(M_PI * get_time()/ 8.0) / (H * H);
+        return 4.0 * U_m * p[1] * (H - p[1])/ (H * H);
+        #endif
       }
       else
         return 0.0;
@@ -96,11 +111,15 @@ public:
 
     double get_mean_vel()
     {
-      return 2 * U_m / 3;
+      #ifdef DIM
+      return 4.0 * U_m / 9.0;
+      #else
+      return 2.0 * U_m / 3.0;
+      #endif
     }
 
     protected:
-      double U_m = 1.5;
+      double U_m = 0.45;
       double H = 0.41;
 
   };
@@ -116,7 +135,7 @@ public:
     virtual double
     value(const Point<dim> & /*p*/, const unsigned int /*component*/) const override
     {
-      return 0.;
+      return 0.0;
     }
   };
 

@@ -340,7 +340,7 @@ NavierStokes::set_re_number(int Re)
 
 
 void
-NavierStokes::solve_time_step()
+NavierStokes::solve_time_step(std::ostream &oss)
 {
   auto start_time = std::chrono::high_resolution_clock::now();
   SolverControl solver_control(10000, 1e-6 * system_rhs.l2_norm());
@@ -377,12 +377,15 @@ NavierStokes::solve_time_step()
   auto end_time_solve = std::chrono::high_resolution_clock::now();
 
   pcout << "  " << solver_control.last_step() << " GMRES iterations" << std::endl;
+  oss << solver_control.last_step() << ",";
   pcout << "Elapsed time for preconditioner initialisation: " 
     << std::chrono::duration<double>(end_time_prec - start_time).count()
     << " [s]" << std::endl;
+  oss << std::chrono::duration<double>(end_time_prec - start_time).count() << ",";
   pcout << "Elapsed time for time step solution: " 
     << std::chrono::duration<double>(end_time_solve - end_time_prec).count()
     << " [s]" << std::endl;
+  oss << std::chrono::duration<double>(end_time_solve - end_time_prec).count() << ",";
   
   pcout << std::endl;
   // pcout << "-----------------------------------" << std::endl;
@@ -439,7 +442,7 @@ NavierStokes::solve(unsigned int time_step)
   pcout << "===================================================" << std::endl;
 
   std::ofstream output_file("forces_vs_time.csv");
-  output_file << "time,Drag,Lift,Cd,Cl\n";
+  output_file << "time,deltat,GMRES_iters,time_prec_init,time_sol,Drag,Lift,Cd,Cl\n";
 
   // Initial condition
   {
@@ -475,17 +478,16 @@ NavierStokes::solve(unsigned int time_step)
     pcout << "n = " << std::setw(3) << time_step << ", t = " << std::setw(5)
       << time << ":" << std::flush;
 
-    // TESTCASE3
-    //nu = (inlet_velocity.get_mean_vel() * std::sin(M_PI * time / 8) * Diameter) / 100;
     assemble(time);
-    solve_time_step();
+    output_file << time << "," << deltat << ",";
+    solve_time_step(output_file);
     compute_forces(time);
-    output_file << time << "," << drag << "," 
-      << lift << "," << cd << "," << cl << "\n";
+    
+    output_file << drag << "," << lift << "," << cd << "," << cl << "\n";
 
     if (0 == time_step % step)
     {
-      //output(time_step);
+      output(time_step);
       export_data(time_step);
     }
 

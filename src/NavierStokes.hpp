@@ -198,7 +198,7 @@ public:
 
   void assemble_static_matrices();
 
-  void solve_time_step();
+  void solve_time_step(std::ostream &oss);
 
   void assemble(const double &time);
 

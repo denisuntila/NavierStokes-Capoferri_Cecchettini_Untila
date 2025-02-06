@@ -1,12 +1,17 @@
-### Organizing the source code
-Please place all your sources into the `src` folder.
+### Organizing the Source Code
+The `src` folder contains the files `NavierStokes.hpp`, `NavierStokes.cpp`, and some example files demonstrating their usage.
 
 Binary files must not be uploaded to the repository (including executables).
 
-Mesh files should not be uploaded to the repository. If applicable, upload `gmsh` scripts with suitable instructions to generate the meshes (and ideally a Makefile that runs those instructions). If not applicable, consider uploading the meshes to a different file sharing service, and providing a download link as part of the building and running instructions.
+The `mesh` folder contains `.geo` files for `gmsh`. To generate the meshes, navigate to the `mesh` folder and run:
+```bash
+$ cd mesh
+$ gmsh domain2D.geo -2
+$ gmsh domain3D.geo -3
+```
 
-### Compiling
-To build the executable, make sure you have loaded the needed modules with
+### Compilation
+To compile the executable, make sure you have loaded the necessary modules with:
 ```bash
 $ module load gcc-glibc dealii
 ```
@@ -15,9 +20,30 @@ Then run the following commands:
 $ mkdir build
 $ cd build
 $ cmake ..
-$ make
+$ make -j2 NavierStokes
+$ make -j2 postprocess
 ```
-The executable will be created into `build`, and can be executed through
+The executable will be created in the `build` folder and can be executed with:
 ```bash
 $ ./executable-name
 ```
+
+### Running Tests
+To run the tests, navigate to the appropriate test folder:
+#### 2D Tests
+```bash
+$ cd tests/2D/test_0X
+$ mkdir build
+$ cd build
+$ cmake ..
+$ make -j2
+```
+#### 3D Tests
+```bash
+$ cd tests/3D/test_0X
+$ mkdir build
+$ cd build
+$ cmake ..
+$ make -j2
+```
+

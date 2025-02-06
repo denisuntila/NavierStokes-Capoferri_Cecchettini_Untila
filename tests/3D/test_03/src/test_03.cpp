@@ -40,7 +40,7 @@ NavierStokes::InletVelocity::value(const Point<dim> &p, const unsigned int compo
 double
 NavierStokes::InletVelocity::get_mean_vel()
 {
-  return 4.0 * U_m / 9.0;
+  return 4.0 * U_m * std::sin(M_PI * get_time() / 8.0)/ 9.0;
 }
 
 

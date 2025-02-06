@@ -908,13 +908,13 @@ NavierStokes::compute_forces(const double &time)
 
   if (3 == dim)
   {
-    cd = 2.0 * drag / (U * U * Diameter * 0.41);
-    cl = 2.0 * lift / (U * U * Diameter * 0.41);
+    cd = 2.0 * -drag / (U * U * Diameter * 0.41);
+    cl = 2.0 * -lift / (U * U * Diameter * 0.41);
   }
   else
   {
-    cd = 2.0 * drag / (U * U * Diameter);
-    cl = 2.0 * lift / (U * U * Diameter);
+    cd = 2.0 * -drag / (U * U * Diameter);
+    cl = 2.0 * -lift / (U * U * Diameter);
   }
 
 

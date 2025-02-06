@@ -37,8 +37,6 @@
 //#include <boost/range/adaptor/reversed.hpp>
 
 #include <chrono>
-#define DIM 3
-
 
 
 using namespace dealii;
@@ -53,11 +51,7 @@ using Q_Type = QGaussSimplex<Dim>;
 class NavierStokes
 {
 public:
-  #ifdef DIM
-  static constexpr unsigned int dim = 3;
-  #else
-  static constexpr unsigned int dim = 2;
-  #endif
+  static constexpr unsigned int dim = DIM;
 
   class ForcingTerm : public Function<dim>
   {
@@ -70,6 +64,8 @@ public:
     }
   };
 
+  
+
   class InletVelocity : public Function<dim>
   {
   public:
@@ -77,51 +73,53 @@ public:
       : Function<dim>(dim + 1)
     {}
 
-    virtual void
-    vector_value(const Point<dim> &p, Vector<double> &values) const override
-    {
 
+    #ifndef NS_INPUT
+
+    virtual void
+    vector_value(const Point<dim> &/*p*/, Vector<double> &values) const override
+    {
+      //values[0] = 1.0;
       for (unsigned int i = 0; i < dim + 1; ++i)
         values[i] = 0.0;
-
-      #ifdef DIM
-      values[0] = 16.0 * U_m * p[1] * p[2] * (H- p[1]) * (H- p[2]) / (H * H * H * H);
-      #else
-      //values[0] = 4.0 * U_m * p[1] * (H- p[1]) * std::sin(M_PI * get_time()/ 8.0) / (H * H);
-      values[0] = 4.0 * U_m * p[1] * (H- p[1]) / (H * H);
-      #endif
-
+      if (/*p[1] < 0.24*/ 1)
+        values[0] = 3.0;
+      
+      //values[0] = 10.0;
     }
 
     virtual double
-    value(const Point<dim> &p, const unsigned int component) const
+    value(const Point<dim> &/*p*/, const unsigned int component = 0) const override
     {
-      if (component == 0)
+      if (/*component == 1 ||*/ component == 0)
       {
-        #ifdef DIM
-        return 16.0 * U_m * p[1] * p[2] * (H- p[1]) * (H- p[2]) / (H * H * H * H);
-        #else
-        //return 4.0 * U_m * p[1] * (H- p[1]) * std::sin(M_PI * get_time()/ 8.0) / (H * H);
-        return 4.0 * U_m * p[1] * (H - p[1])/ (H * H);
-        #endif
+        if (/*p[1] < 0.24*/1)
+          return 3.0;
+        else
+          return 0.0;
       }
       else
         return 0.0;
     }
 
-    double get_mean_vel()
+    double
+    get_mean_vel()
     {
-      #ifdef DIM
-      return 4.0 * U_m / 9.0;
-      #else
-      return 2.0 * U_m / 3.0;
-      #endif
+      return 2.0 /** U_m*/ / 3.0;
     }
 
-    protected:
-      double U_m = 0.45;
-      double H = 0.41;
+    #else
 
+    virtual void
+    vector_value(const Point<dim> &/*p*/, Vector<double> &values) const override;
+
+    virtual double
+    value(const Point<dim> &/*p*/, const unsigned int component = 0) const override;
+
+    double
+    get_mean_vel();
+
+    #endif
   };
 
   class FunctionH : public Function<dim>
@@ -266,7 +264,7 @@ protected:
   ForcingTerm forcing_term;
   InletVelocity inlet_velocity;
   InitialConditions initial_conditions;
-  FunctionH function_h;
+  //FunctionH function_h;
 
   double drag, lift;
   double cd, cl;
@@ -279,10 +277,10 @@ public:
 // Application of the preconditioner: we just copy the input vector (src)
 // into the output vector (dst).
   void
-  vmult(TrilinosWrappers::MPI::BlockVector       &dst,
-          const TrilinosWrappers::MPI::BlockVector &src) const
+  vmult(TrilinosWrappers::MPI::BlockVector &dst,
+    const TrilinosWrappers::MPI::BlockVector &src) const
   {
-      dst = src;
+    dst = src;
   }
 
 protected:

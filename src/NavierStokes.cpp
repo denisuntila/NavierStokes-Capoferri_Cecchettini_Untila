@@ -327,12 +327,14 @@ NavierStokes::assemble(const double &time)
   }
 }
 
-void NavierStokes::set_re_number(int Re)
+void 
+NavierStokes::set_re_number(int Re)
 {
   pcout << "-----------------------------------" << std::endl;
   double U = inlet_velocity.get_mean_vel();
   nu = (U * Diameter) / Re;
-  pcout << "New reynolds number setted to " << Re << " with nu = " << nu <<  " ." << std::endl;
+  pcout << "New reynolds number setted to " << Re << " with nu = " 
+    << nu <<  " ." << std::endl;
   pcout << "-----------------------------------" << std::endl;
 }
 
@@ -355,7 +357,6 @@ NavierStokes::solve_time_step()
     system_matrix.block(0, 1),
     solution_owned
   );
-  
   
   
   /*
@@ -479,11 +480,12 @@ NavierStokes::solve(unsigned int time_step)
     assemble(time);
     solve_time_step();
     compute_forces(time);
-    output_file << time << "," << drag << "," << lift << "," << cd << "," << cl << "\n";
+    output_file << time << "," << drag << "," 
+      << lift << "," << cd << "," << cl << "\n";
 
-    if (time_step % step == 0)
+    if (0 == time_step % step)
     {
-      output(time_step);
+      //output(time_step);
       export_data(time_step);
     }
 
@@ -494,10 +496,7 @@ NavierStokes::solve(unsigned int time_step)
 
 void
 NavierStokes::export_data(const unsigned int &time_step)
-{
-  // For now it works in singlecore
-  // I'll try to fix it using the ghost of the vector
-  
+{ 
   unsigned int local_size = solution.locally_owned_size();
   unsigned int max_local_size = 0;
   MPI_Allreduce(&local_size, &max_local_size,
@@ -883,15 +882,18 @@ NavierStokes::compute_forces(const double &time)
             Tensor<1, dim> tangent;
             tangent[0] = ny;
             tangent[1] = -nx;
-            #ifdef DIM
-            tangent[2] = 0;
-            #endif
+            if (3 == dim)
+              tangent[2] = 0;
 
-            ldrag += nu * fe_face_values.normal_vector(q) * current_velocity_gradients[q] * tangent * ny * fe_face_values.JxW(q);
+            ldrag += nu * 
+              fe_face_values.normal_vector(q) * current_velocity_gradients[q] * 
+              tangent * ny * fe_face_values.JxW(q);
 
             ldrag -= current_pressure_values[q] * nx * fe_face_values.JxW(q);
 
-            llift -= nu * fe_face_values.normal_vector(q) * current_velocity_gradients[q] * tangent * nx * fe_face_values.JxW(q);
+            llift -= nu * 
+              fe_face_values.normal_vector(q) * current_velocity_gradients[q] * 
+              tangent * nx * fe_face_values.JxW(q);
 
             llift -= current_pressure_values[q] * ny * fe_face_values.JxW(q);
           }
@@ -904,19 +906,26 @@ NavierStokes::compute_forces(const double &time)
 
   double U = inlet_velocity.get_mean_vel();//* std::sin(M_PI * time / 8);         // Velocità media in ingresso
 
-  #ifdef DIM
-  cd = 2.0 * drag / (U * U * Diameter * 0.41);
-  cl = 2.0 * lift / (U * U * Diameter * 0.41);
-  #else
-  cd = 2.0 * drag / (U * U * Diameter);
-  cl = 2.0 * lift / (U * U * Diameter);
-  #endif
+  if (3 == dim)
+  {
+    cd = 2.0 * drag / (U * U * Diameter * 0.41);
+    cl = 2.0 * lift / (U * U * Diameter * 0.41);
+  }
+  else
+  {
+    cd = 2.0 * drag / (U * U * Diameter);
+    cl = 2.0 * lift / (U * U * Diameter);
+  }
 
-  pcout << "Drag coefficient (Cd): " << cd << "   Lift coefficient (Cl): " << cl << std::endl;
+
+  pcout << "Drag coefficient (Cd): " << cd << "   Lift coefficient (Cl): " 
+    << cl << std::endl;
   pcout << "---------------------------------------------------" << std::endl;
 
 }
 
+
+// Preconditioners implementation
 
 void
 NavierStokes::PreconditionASIMPLE::initialize(

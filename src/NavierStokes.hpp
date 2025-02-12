@@ -252,8 +252,8 @@ protected:
   TrilinosWrappers::MPI::BlockVector solution;
 
   double nu = 1.e-3;
-  const double p_out = 10.0;
-  const double Diameter = 0.1;
+  const double p_out = 0.0;
+  const double Diameter = 0.4;
 
   const double deltat;
 

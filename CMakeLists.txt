@@ -10,6 +10,6 @@ add_executable(postprocess src/postprocess.cpp src/NavierStokes.cpp)
 deal_ii_setup_target(postprocess)
 
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DDIM=3")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DDIM=2")
 
 

@@ -1,3 +1,6 @@
+#!/usr/bin/python
+
+import sys
 import math
 
 class NacaAirfoil:
@@ -42,10 +45,10 @@ class NacaAirfoil:
 class Mesh:
   def __init__(self):
     self.lx = 2.2
-    self.ly = 0.41
+    self.ly = 1.0
     self.dx = 0.4
-    self.dy = 0.2
-    self.h = 0.01
+    self.dy = 0.5
+    self.h = 0.015
     self.points = []
     self.lines = []
     self.loops = []
@@ -150,10 +153,13 @@ class Mesh:
 
 
 if __name__ == "__main__":
-    a = NacaAirfoil("naca2412.dat")
-    a.resize(0.5)
+    file_name = sys.argv[1]
+    a = NacaAirfoil(file_name)
+    chord = float(sys.argv[2])
+    a.resize(chord)
 
-    angle = 10 #degrees
+    angle = float(sys.argv[3])
+    #angle = 10 #degrees
 
     file_name = a.name.replace(" ", "_") + ".geo"
     a.rotate(angle * math.pi / 180.0)
